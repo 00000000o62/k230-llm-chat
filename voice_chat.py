@@ -310,9 +310,6 @@ def play_audio(filename):
         frame_rate = wf.get_framerate()
         sampwidth = wf.get_sampwidth()
         channels = wf.get_channels()
-        fsize = uos.stat(filename)[6]
-        data_size = fsize - 44
-        duration = data_size / (frame_rate * sampwidth * channels)
 
         p = PyAudio()
         p.initialize(CHUNK)
@@ -326,12 +323,15 @@ def play_audio(filename):
         )
         stream.volume(vol=100)
 
+        bytes_written = 0
         data = wf.read_frames(CHUNK)
         while data:
             stream.write(data)
+            bytes_written += len(data)
             data = wf.read_frames(CHUNK)
 
-        time.sleep(duration + 0.5)
+        duration = bytes_written / (frame_rate * sampwidth * channels)
+        time.sleep(duration + 1.0)
 
     except Exception as e:
         print(f"  Play error: {e}")
