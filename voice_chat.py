@@ -11,14 +11,13 @@ from ybUtils.YbSpeaker import YbSpeaker
 from ybUtils.YbKey import YbKey
 
 import YbRequests as requests
-import libs.upload_image as upload_image
 
 # ============================================================
 # 配置区 - 使用前请修改
 # ============================================================
 WIFI_SSID = "11111"
 WIFI_KEY = "88888888"
-API_KEY = "your-dashscope-api-key"  # 阿里云百炼平台 DashScope API Key
+API_KEY = "sk-7f1f0e35b05d44239b6eefa43cff1996"
 
 # ============================================================
 # 全局对象
@@ -106,27 +105,97 @@ def record_until_release(key, filename):
     wf.set_framerate(RATE)
     wf.write_frames(b''.join(frames))
     wf.close()
-    print(f"  Saved: {filename}")
+
+    time.sleep_ms(200)
+
+    try:
+        fsize = uos.stat(filename)[6]
+        print(f"  Saved: {filename} ({fsize} bytes)")
+    except OSError:
+        print(f"  Save verify failed: {filename}")
+        return False
+
+    gc.collect()
     return True
 
 
 def upload_audio(filename):
-    """上传音频到DashScope OSS"""
+    """上传音频到DashScope OSS (直接HTTP实现，不依赖libs.upload_image)"""
     print("  Uploading audio to OSS...")
     gc.collect()
-    for attempt in range(5):
+
+    for attempt in range(3):
         try:
-            oss_url = upload_image.upload_image_to_dashscope(
-                API_KEY, filename, "qwen-audio-turbo"
-            )
-            print(f"  OSS URL: {oss_url}")
+            # Step 1: 获取OSS上传凭证
+            policy_url = ("https://dashscope.aliyuncs.com/api/v1/uploads"
+                          "?action=getPolicy&model=qwen-audio-turbo")
+            policy_headers = {"Authorization": f"Bearer {API_KEY}"}
+
+            resp = requests.get(policy_url, headers=policy_headers, timeout=30)
+            if resp.status_code != 200:
+                print(f"  getPolicy failed: {resp.status_code} {resp.text[:100]}")
+                continue
+
+            policy = resp.json()["data"]
             gc.collect()
-            return oss_url
+
+            # Step 2: 构建multipart上传到OSS
+            file_name = filename.split("/")[-1]
+            key = f"{policy['upload_dir']}/{file_name}"
+
+            with open(filename, "rb") as f:
+                file_data = f.read()
+
+            boundary = "----FormBoundary7MA4YWxkTrZu0gW"
+            fields = {
+                "OSSAccessKeyId": policy["oss_access_key_id"],
+                "Signature": policy["signature"],
+                "policy": policy["policy"],
+                "x-oss-object-acl": policy["x_oss_object_acl"],
+                "x-oss-forbid-overwrite": policy["x_oss_forbid_overwrite"],
+                "key": key,
+                "success_action_status": "200"
+            }
+
+            parts = []
+            for name, value in fields.items():
+                parts.append(
+                    f"--{boundary}\r\n"
+                    f'Content-Disposition: form-data; name="{name}"\r\n'
+                    f"\r\n{value}\r\n"
+                )
+            parts.append(
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="file"; filename="{file_name}"\r\n'
+                f"Content-Type: application/octet-stream\r\n\r\n"
+            )
+
+            text_bytes = "".join(parts).encode("utf-8")
+            end_bytes = f"\r\n--{boundary}--\r\n".encode("utf-8")
+            body = text_bytes + file_data + end_bytes
+
+            upload_headers = {
+                "Content-Type": f"multipart/form-data; boundary={boundary}"
+            }
+
+            resp = requests.post(
+                policy["upload_host"],
+                data=body, headers=upload_headers, timeout=60
+            )
+
+            if resp.status_code == 200:
+                oss_url = f"oss://{key}"
+                print(f"  OSS URL: {oss_url}")
+                return oss_url
+            else:
+                print(f"  OSS post failed: {resp.status_code}")
+
         except Exception as e:
             print(f"  Upload attempt {attempt + 1} failed: {e}")
             gc.collect()
-            if attempt < 4:
-                time.sleep(0.5)
+            if attempt < 2:
+                time.sleep(1)
+
     print("  Upload failed after retries!")
     return None
 
@@ -136,7 +205,8 @@ def ask_qwen_audio(oss_url):
     print("  Asking Qwen-Audio...")
     gc.collect()
 
-    url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+    url = ("https://dashscope.aliyuncs.com/api/v1/services/"
+           "aigc/multimodal-generation/generation")
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json",
@@ -146,8 +216,10 @@ def ask_qwen_audio(oss_url):
         "model": "qwen-audio-turbo-latest",
         "input": {
             "messages": [
-                {"role": "system", "content": [{"text": "You are a helpful assistant."}]},
-                {"role": "user", "content": [{"audio": oss_url}]}
+                {"role": "system",
+                 "content": [{"text": "You are a helpful assistant."}]},
+                {"role": "user",
+                 "content": [{"audio": oss_url}]}
             ]
         }
     }
@@ -160,8 +232,8 @@ def ask_qwen_audio(oss_url):
         return None
 
     try:
-        text = resp.text if isinstance(resp.text, str) else resp.text.decode('utf-8')
-        result = json.loads(text)
+        raw = resp.text if isinstance(resp.text, str) else resp.text.decode('utf-8')
+        result = json.loads(raw)
         choices = result["output"]["choices"]
         if choices:
             content = choices[0]["message"]["content"]
@@ -179,7 +251,8 @@ def text_to_speech(text, voice="Cherry"):
     print(f"  TTS: {text[:40]}...")
     gc.collect()
 
-    url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+    url = ("https://dashscope.aliyuncs.com/api/v1/services/"
+           "aigc/multimodal-generation/generation")
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json"
@@ -199,10 +272,10 @@ def text_to_speech(text, voice="Cherry"):
         return False
 
     try:
-        text_data = resp.text if isinstance(resp.text, str) else resp.text.decode('utf-8')
-        result = json.loads(text_data)
+        raw = resp.text if isinstance(resp.text, str) else resp.text.decode('utf-8')
+        result = json.loads(raw)
         audio_url = result["output"]["audio"]["url"]
-        print(f"  TTS audio URL: {audio_url}")
+        print(f"  TTS audio URL ready")
     except Exception as e:
         print(f"  TTS parse error: {e}")
         return False
@@ -268,6 +341,7 @@ def play_audio(filename):
 def cleanup(path):
     try:
         uos.remove(path)
+        gc.collect()
     except:
         pass
 
@@ -286,6 +360,7 @@ def main():
     count = 0
 
     while True:
+        rec_file = ""
         try:
             count += 1
             print(f"\n--- Conversation #{count} ---")
@@ -294,19 +369,23 @@ def main():
 
             if not record_until_release(key, rec_file):
                 cleanup(rec_file)
+                print("  Recording failed, retry...")
                 continue
 
             oss_url = upload_audio(rec_file)
             cleanup(rec_file)
             if not oss_url:
+                print("  Upload failed, retry...")
                 continue
 
             reply = ask_qwen_audio(oss_url)
             if not reply:
-                print("  No reply from LLM, skipping TTS.")
+                print("  No reply from LLM.")
                 continue
 
-            _ = text_to_speech(reply)
+            if not text_to_speech(reply):
+                print("  TTS failed.")
+                continue
 
             play_audio(TTS_OUTPUT)
             cleanup(TTS_OUTPUT)
