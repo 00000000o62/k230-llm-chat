@@ -137,7 +137,7 @@ def upload_audio(filename):
                 print(f"  getPolicy failed: {resp.status_code} {resp.text[:100]}")
                 continue
 
-            policy = resp.json()["data"]
+            policy = resp.json["data"]
             gc.collect()
 
             # Step 2: 构建multipart上传到OSS
