@@ -160,14 +160,14 @@ def upload_audio(filename):
             parts = []
             for name, value in fields.items():
                 parts.append(
-                    f"--{boundary}\r\n"
-                    f'Content-Disposition: form-data; name="{name}"\r\n'
-                    f"\r\n{value}\r\n"
+                    "--" + boundary + "\r\n"
+                    "Content-Disposition: form-data; name=\"" + name + "\"\r\n"
+                    "\r\n" + value + "\r\n"
                 )
             parts.append(
-                f"--{boundary}\r\n"
-                f'Content-Disposition: form-data; name="file"; filename="{file_name}"\r\n'
-                f"Content-Type: application/octet-stream\r\n\r\n"
+                "--" + boundary + "\r\n"
+                "Content-Disposition: form-data; name=\"file\"; filename=\"" + file_name + "\"\r\n"
+                "Content-Type: application/octet-stream\r\n\r\n"
             )
 
             text_bytes = "".join(parts).encode("utf-8")
