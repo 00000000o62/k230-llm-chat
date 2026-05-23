@@ -25,7 +25,8 @@ API_KEY = "sk-7f1f0e35b05d44239b6eefa43cff1996"
 spk = YbSpeaker()
 media_initialized = False
 
-TTS_OUTPUT = "/data/tts_reply.wav"
+TTS_OUTPUT = "/sdcard/tts_reply.wav"
+REC_DIR = "/sdcard/"
 
 
 def connect_wifi():
@@ -95,8 +96,9 @@ def record_until_release(key, filename):
     input_stream.close()
     gc.collect()
 
+    print(f"  Frames captured: {len(frames)}")
     if not frames:
-        print("  No audio recorded!")
+        print("  No audio recorded! (hold button longer)")
         return False
 
     wf = wave.open(filename, 'wb')
@@ -106,14 +108,13 @@ def record_until_release(key, filename):
     wf.write_frames(b''.join(frames))
     wf.close()
 
-    time.sleep_ms(200)
+    time.sleep_ms(100)
 
     try:
         fsize = uos.stat(filename)[6]
         print(f"  Saved: {filename} ({fsize} bytes)")
     except OSError:
-        print(f"  Save verify failed: {filename}")
-        return False
+        print(f"  WARNING: stat failed for {filename}, continuing anyway")
 
     gc.collect()
     return True
@@ -365,7 +366,7 @@ def main():
             count += 1
             print(f"\n--- Conversation #{count} ---")
 
-            rec_file = f"/data/voice_{time.ticks_ms()}.wav"
+            rec_file = REC_DIR + "voice_" + str(time.ticks_ms()) + ".wav"
 
             if not record_until_release(key, rec_file):
                 cleanup(rec_file)
