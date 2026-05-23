@@ -307,6 +307,9 @@ def play_audio(filename):
         spk.enable()
         wf = wave.open(filename, 'rb')
         CHUNK = int(wf.get_framerate() / 25)
+        total_frames = wf.get_nframes()
+        frame_rate = wf.get_framerate()
+        duration = (total_frames / frame_rate) if frame_rate > 0 else 2
 
         p = PyAudio()
         p.initialize(CHUNK)
@@ -314,7 +317,7 @@ def play_audio(filename):
         stream = p.open(
             format=p.get_format_from_width(wf.get_sampwidth()),
             channels=wf.get_channels(),
-            rate=wf.get_framerate(),
+            rate=frame_rate,
             output=True,
             frames_per_buffer=CHUNK
         )
@@ -324,6 +327,8 @@ def play_audio(filename):
         while data:
             stream.write(data)
             data = wf.read_frames(CHUNK)
+
+        time.sleep(duration + 0.5)
 
     except Exception as e:
         print(f"  Play error: {e}")
