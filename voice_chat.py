@@ -376,9 +376,23 @@ def main():
     print("Press button to record, release to send")
     print("=" * 50)
 
-    if not connect_wifi():
-        print("WiFi failed! Check SSID/KEY.")
-        return
+    # 启动指示: 快闪蓝色表示程序已启动
+    for _ in range(2):
+        rgb.show_rgb((0, 0, 255))
+        time.sleep_ms(100)
+        rgb.show_rgb((0, 0, 0))
+        time.sleep_ms(100)
+
+    # 循环连接WiFi，不退出
+    while True:
+        if connect_wifi():
+            break
+        print("WiFi failed, retrying in 3s...")
+        # WiFi失败: 黄色慢闪等待重试
+        rgb.show_rgb((255, 128, 0))
+        time.sleep_ms(500)
+        rgb.show_rgb((0, 0, 0))
+        time.sleep(2)
 
     key = YbKey()
     count = 0
