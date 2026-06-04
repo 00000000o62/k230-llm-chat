@@ -9,6 +9,7 @@ from media.pyaudio import *
 import media.wave as wave
 from ybUtils.YbSpeaker import YbSpeaker
 from ybUtils.YbKey import YbKey
+from ybUtils.YbRGB import YbRGB
 
 import YbRequests as requests
 
@@ -23,6 +24,7 @@ API_KEY = "sk-7f1f0e35b05d44239b6eefa43cff1996"
 # 全局对象
 # ============================================================
 spk = YbSpeaker()
+rgb = YbRGB()
 media_initialized = False
 
 TTS_OUTPUT = "/sdcard/tts_reply.wav"
@@ -36,6 +38,7 @@ def connect_wifi():
     wlan.active(True)
     if wlan.isconnected():
         print(f"WiFi already connected, IP: {wlan.ifconfig()[0]}")
+        rgb.show_rgb((0, 255, 0))
         return True
     wlan.connect(WIFI_SSID, WIFI_KEY)
     timeout = 15
@@ -45,6 +48,7 @@ def connect_wifi():
         print(f"  waiting... {timeout}s")
     if wlan.isconnected():
         print(f"WiFi connected, IP: {wlan.ifconfig()[0]}")
+        rgb.show_rgb((0, 255, 0))
         return True
     print("WiFi connection timeout!")
     return False
@@ -82,6 +86,7 @@ def record_until_release(key, filename):
     input_stream.volume(LEFT, 85)
     input_stream.volume(RIGHT, 85)
 
+    rgb.show_rgb((255, 0, 0))
     print("  Recording... (release to stop)")
     while key.is_pressed():
         try:
@@ -92,6 +97,7 @@ def record_until_release(key, filename):
         time.sleep_ms(10)
 
     print("  Recording stopped.")
+    rgb.show_rgb((0, 0, 255))
     input_stream.stop_stream()
     input_stream.close()
     gc.collect()
@@ -355,6 +361,15 @@ def cleanup(path):
         pass
 
 
+def flash_error():
+    """红灯快闪3次表示错误"""
+    for _ in range(3):
+        rgb.show_rgb((255, 0, 0))
+        time.sleep_ms(150)
+        rgb.show_rgb((0, 0, 0))
+        time.sleep_ms(150)
+
+
 def main():
     print("=" * 50)
     print("K230 Voice Chat - DashScope")
@@ -379,35 +394,47 @@ def main():
             if not record_until_release(key, rec_file):
                 cleanup(rec_file)
                 print("  Recording failed, retry...")
+                flash_error()
+                rgb.show_rgb((0, 255, 0))
                 continue
 
             oss_url = upload_audio(rec_file)
             cleanup(rec_file)
             if not oss_url:
                 print("  Upload failed, retry...")
+                flash_error()
+                rgb.show_rgb((0, 255, 0))
                 continue
 
             reply = ask_qwen_audio(oss_url)
             if not reply:
                 print("  No reply from LLM.")
+                flash_error()
+                rgb.show_rgb((0, 255, 0))
                 continue
 
             if not text_to_speech(reply):
                 print("  TTS failed.")
+                flash_error()
+                rgb.show_rgb((0, 255, 0))
                 continue
 
             play_audio(TTS_OUTPUT)
             cleanup(TTS_OUTPUT)
 
+            rgb.show_rgb((0, 255, 0))
             print(f"--- Conversation #{count} done ---")
 
         except KeyboardInterrupt:
+            rgb.show_rgb((0, 0, 0))
             print("\nUser interrupted.")
             break
         except Exception as e:
             print(f"  Conversation error: {e}")
             cleanup(rec_file)
             cleanup(TTS_OUTPUT)
+            flash_error()
+            rgb.show_rgb((0, 255, 0))
             time.sleep(1)
 
     print(f"Finished. {count} conversations completed.")
