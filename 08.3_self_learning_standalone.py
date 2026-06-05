@@ -49,6 +49,16 @@ WIFI_SSID = "11111"
 WIFI_KEY = "88888888"
 API_KEY = "sk-7f1f0e35b05d44239b6eefa43cff1996"
 
+# ============================================================
+# 药品信息字典 — 本地识别到药盒后直接查字典播报(快速路径)
+# key: 必须与 labels 中的名称一致
+# ============================================================
+MEDICINE_INFO = {
+    "药盒A": "阿莫西林胶囊。每次一粒，每日三次，饭后服用。对青霉素过敏者禁用。",
+    "药盒B": "布洛芬缓释胶囊。每次一粒，每日两次，饭后服用。胃病患者慎用，不可长期服用。",
+    "药盒C": "感冒灵颗粒。每次一包，每日三次，开水冲服。服药期间不得饮酒，不宜驾驶。",
+}
+
 SAMPLE_RATE = 16000         # 采样率 24000Hz，即每秒采样24000次 / Sample rate 24000Hz, i.e., 24000 samples per second
 CHANNELS = 1                # 通道数，1为单声道 / Number of channels, 1 for mono
 FORMAT = paInt16            # 音频输入输出格式 / Audio input/output format
@@ -735,7 +745,7 @@ def exce_demo(pl, recong_only=False):
     # Other parameters: model input size, labels, top_k and threshold.
     model_input_size = [224,224]
     # labels = ["耳机", "超声波模块"]
-    labels = ["耳机", "手环", "L形520电机"]
+    labels = ["药盒A", "药盒B", "药盒C"]  # 改成你的药盒名称, 需与MEDICINE_INFO的key一致
     top_k = 3
     threshold = 0.65
 
@@ -865,7 +875,9 @@ def ask_qwen_omni(audio_oss, image_oss):
     """Qwen-Omni: 同时理解语音+画面, 直接回答"""
     print("  Asking Qwen-Omni...")
     gc.collect()
-    ctx = "你是K230视觉语音助手。请用中文简短口语化回答用户问题。能看到摄像头画面,也能听到用户语音。"
+    ctx = "你是药品管理助手。请用中文简短口语化回答。"
+    if recog_item and recog_item in MEDICINE_INFO:
+        ctx += "摄像头本地识别到: " + recog_item + "。" + MEDICINE_INFO[recog_item]
     content_list = []
     if image_oss:
         content_list.append({"image": image_oss})
@@ -955,6 +967,22 @@ def capture_snapshot():
         return None
 
 
+def local_respond(text):
+    """快速路径: 本地字典播报, 不走云端 (1-2秒)"""
+    print("  Fast path: " + text)
+    time.sleep_ms(5)
+    success = text_to_speech_dashscope(text)
+    time.sleep_ms(5)
+    if success:
+        play_audio_file("/sdcard/tts_reply.wav")
+        try:
+            os.remove("/sdcard/tts_reply.wav")
+        except:
+            pass
+    else:
+        play_audio_file("/sdcard/utils/saywhat.wav")
+
+
 def async_get_voice_to_text():
     """Qwen-Omni版: 上传录音+拍照 → 多模态理解 → 返回回答"""
     global voice_text_ret
@@ -1016,7 +1044,22 @@ def voice_serv():
 
         rgb.show_rgb((0, 0, 255))       # 蓝=处理中
 
-        # 屏幕提示: 识别中
+        # 快速路径: 本地识别到药品 → 直接查字典播报 (1-2秒)
+        if recog_item and recog_item in MEDICINE_INFO:
+            print("  Fast path: " + recog_item)
+            img2 = image.Image(640, 480, image.RGB565)
+            img2.clear()
+            alert_text = "识别到: " + recog_item
+            tx = (screen_width - len(alert_text) * 8) // 2
+            ty = banner_y + (banner_height - 10) // 2
+            img2.draw_string_advanced(tx, ty, 18, alert_text, color=(255, 255, 255))
+            Display.show_image(img2, 0, 0, Display.LAYER_OSD3)
+            local_respond(MEDICINE_INFO[recog_item])
+            img2.clear()
+            Display.show_image(img2, 0, 0, Display.LAYER_OSD3)
+            continue
+
+        # 慢速路径: 未识别 → 上传录音+拍照 → Qwen-Omni
         img2 = image.Image(640, 480, image.RGB565)
         img2.clear()
         alert_text = "识别中... | Recognizing"
@@ -1025,7 +1068,6 @@ def voice_serv():
         img2.draw_string_advanced(tx, ty, 18, alert_text, color=(255, 255, 255))
         Display.show_image(img2, 0, 0, Display.LAYER_OSD3)
 
-        # DashScope: 上传+语音理解 (一句搞定, 不再需要 analyze_speech)
         async_get_voice_to_text()
         while voice_text_ret is None:
             time.sleep_ms(5)
@@ -1037,18 +1079,15 @@ def voice_serv():
             Display.show_image(img2, 0, 0, Display.LAYER_OSD3)
             continue
 
-        # Qwen-Audio已经返回了回答文字, 直接TTS
         reply_text = voice_text_ret
         print("Reply:", reply_text)
 
-        # 屏幕提示: 思考中
         img2.clear()
         alert_text = "思考中... | Thinking"
         tx = (screen_width - len(alert_text) * 8) // 2
         img2.draw_string_advanced(tx, ty, 18, alert_text, color=(255, 255, 255))
         Display.show_image(img2, 0, 0, Display.LAYER_OSD3)
 
-        # DashScope TTS
         time.sleep_ms(5)
         success = text_to_speech_dashscope(reply_text)
         time.sleep_ms(5)
