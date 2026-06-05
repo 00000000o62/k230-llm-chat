@@ -50,6 +50,11 @@ WIFI_KEY = "88888888"
 API_KEY = "sk-7f1f0e35b05d44239b6eefa43cff1996"
 
 # ============================================================
+# 运行模式: True=识别模式(日常使用), False=注册模式(采集药盒特征)
+# ============================================================
+REGISTER_MODE = False  # 首次使用设为False注册药盒, 注册完成后改为True
+
+# ============================================================
 # 药品信息字典 — 本地识别到药盒后直接查字典播报(快速路径)
 # key: 必须与 labels 中的名称一致
 # ============================================================
@@ -667,12 +672,27 @@ class SelfLearningApp(AIBase):
         数据初始化，主要包括创建存储特征的目录和计算OSD上显示的剪切区域位置
         Initialize data. Mainly creates the directory for features and calculates the on-screen crop positions.
         """
-        try:
-            # 尝试创建数据库文件夹（用于存储特征文件）
-            # Try creating the database directory for storing feature files.
-            os.mkdir(self.database_path)
-        except Exception as e:
-            print(e)
+        # 递归创建数据库目录
+        dp = self.database_path.rstrip("/")
+        parts = dp.split("/")
+        for i in range(2, len(parts) + 1):
+            sub = "/".join(parts[:i])
+            try:
+                os.mkdir(sub)
+                print("  created dir: " + sub)
+            except:
+                pass
+
+        # 注册模式: 自动清理旧特征文件
+        if not self.recong_only:
+            try:
+                old = os.listdir(self.database_path)
+                for f in old:
+                    if f.endswith(".bin"):
+                        os.remove(self.database_path + f)
+                        print("  removed old: " + f)
+            except:
+                pass
         # 计算OSD显示区域位置，将摄像头图像区域按显示分辨率进行缩放转换
         # Calculate the positions for the OSD display region by scaling from sensor resolution to display resolution.
         self.crop_x_osd = int(self.crop_x / self.rgb888p_size[0] * self.display_size[0])
@@ -1122,5 +1142,9 @@ if __name__ == "__main__":
     _thread.start_new_thread(voice_serv, ())
     pl = PipeLine(rgb888p_size=rgb888p_size, display_size=display_size, display_mode=display_mode)
     pl.create()
-    exce_demo(pl, True)
+    if REGISTER_MODE:
+        print("=== 识别模式 ===")
+    else:
+        print("=== 注册模式: 请依次将药盒放入黄框 ===")
+    exce_demo(pl, not REGISTER_MODE)  # recong_only = not REGISTER_MODE
 
