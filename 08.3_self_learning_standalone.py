@@ -563,25 +563,24 @@ class SelfLearningApp(AIBase):
         # Clear the on-screen display (OSD) image
         pl.osd_img.clear()
         with ScopedTiming("display_draw", self.debug_mode > 0):
-            # 绘制特征采集框（黄色矩形框）
-            # Draw the rectangle (in yellow) indicating the feature collection region
+            # 黄色采集框 ARGB: A=255,R=255,G=255,B=0
             pl.osd_img.draw_rectangle(
                 self.crop_x_osd, self.crop_y_osd,
                 self.crop_w_osd, self.crop_h_osd,
-                color=(255, 255, 0, 255), thickness=4
+                color=(255, 255, 255, 0), thickness=4
             )
-            # 判断是否处于特征采集模式
-            # Check if we are in feature collection mode (not recognition only)
             if (not self.recong_only and self.category_index < len(self.labels)):
-                # 更新时间计数，用于统计采集间隔
-                # Increment time counter for feature collection interval
                 self.time_now += 1
-                # 绘制采集提示文字
-                # Draw the prompt text indicating which category is being collected and collection count
+                # 屏幕顶部显示注册提示 (ARGB红=255,255,0,0)
                 pl.osd_img.draw_string_advanced(
-                    50, self.crop_y_osd - 50, 20,
-                    "请将待添加类别放入框内进行特征采集：" + self.labels[self.category_index] + "_" + str(int(self.time_now-1) // self.time_one) + ".bin",
-                    color=(255,255,0,0)
+                    10, 10, 20,
+                    "Register: " + self.labels[self.category_index] + "_" + str(int(self.time_now-1) // self.time_one) + ".bin",
+                    color=(255, 255, 0, 0)
+                )
+                pl.osd_img.draw_string_advanced(
+                    10, 35, 16,
+                    "Put object in the box",
+                    color=(255, 255, 0, 0)
                 )
                 # 保存当前特征到指定文件
                 # Save the current feature to a file for later matching
