@@ -571,17 +571,13 @@ class SelfLearningApp(AIBase):
             )
             if (not self.recong_only and self.category_index < len(self.labels)):
                 self.time_now += 1
-                # 屏幕顶部显示注册提示 (ARGB红=255,255,0,0)
-                pl.osd_img.draw_string_advanced(
-                    10, 10, 20,
-                    "Register: " + self.labels[self.category_index] + "_" + str(int(self.time_now-1) // self.time_one) + ".bin",
-                    color=(255, 255, 0, 0)
-                )
-                pl.osd_img.draw_string_advanced(
-                    10, 35, 16,
-                    "Put object in the box",
-                    color=(255, 255, 0, 0)
-                )
+                idx = int(self.time_now - 1) // self.time_one
+                msg = self.labels[self.category_index] + "_" + str(idx) + ".bin"
+                # 串口+屏幕双重提示
+                if self.time_now % 30 == 0:
+                    print(">>> REG: " + msg + "  (frame " + str(self.time_now) + ")")
+                pl.osd_img.draw_string(10, 10, msg, color=(255, 255, 255, 255))
+                pl.osd_img.draw_string(10, 30, "Put object in box", color=(255, 255, 255, 255))
                 # 保存当前特征到指定文件
                 # Save the current feature to a file for later matching
                 with open(self.database_path + self.labels[self.category_index] + "_" + str(int(self.time_now-1) // self.time_one) + ".bin", 'wb') as f:
@@ -651,16 +647,13 @@ class SelfLearningApp(AIBase):
                                     # Remove the element with the lowest score to maintain top_k results.
                                     results_learn.pop()
                 # 绘制匹配结果文字信息，依次显示每个匹配类别及其得分
-                # Draw the matching result texts: each matching category and its similarity score.
                 draw_y = 200
                 recog_item = None
                 for r in results_learn:
-                    pl.osd_img.draw_string_advanced(
-                        50, draw_y, 20,
-                        r["category"] + " : " + str(r["score"]), color=(255,255,0,0)
-                    )
-                    draw_y += 50
-                    recog_item=r["category"]
+                    txt = r["category"] + " : " + str(r["score"])
+                    pl.osd_img.draw_string(50, draw_y, txt, color=(255, 255, 255, 255))
+                    draw_y += 30
+                    recog_item = r["category"]
 
 
 
@@ -1138,12 +1131,20 @@ if __name__ == "__main__":
     display_size = [640, 480]
     display_mode = "lcd"
 
+    # 启动画面
+    scr = image.Image(640, 480, image.RGB565)
+    scr.clear()
+    if REGISTER_MODE:
+        print("=== 注册模式: 请依次将药盒放入黄框 ===")
+        scr.draw_string(10, 10, "REG MODE", color=(255, 255, 255, 255))
+        scr.draw_string(10, 30, "Put medicine in yellow box", color=(255, 255, 255, 255))
+    else:
+        print("=== 识别模式 ===")
+        scr.draw_string(10, 10, "RECOG MODE", color=(255, 255, 255, 255))
+    Display.show_image(scr, 0, 0, Display.LAYER_OSD3)
+
     _thread.start_new_thread(voice_serv, ())
     pl = PipeLine(rgb888p_size=rgb888p_size, display_size=display_size, display_mode=display_mode)
     pl.create()
-    if REGISTER_MODE:
-        print("=== 识别模式 ===")
-    else:
-        print("=== 注册模式: 请依次将药盒放入黄框 ===")
-    exce_demo(pl, not REGISTER_MODE)  # recong_only = not REGISTER_MODE
+    exce_demo(pl, not REGISTER_MODE)
 
