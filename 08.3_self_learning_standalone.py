@@ -4,43 +4,26 @@
 This code implements a self-learning application for performing model inference on frames captured by a sensor,
 feature collection, and subsequent feature matching.
 """
+# K230 视觉+语音助手 — Qwen-Omni 多模态直连版
 from media.display import *
-# 导入依赖的库和模块
-# Import necessary libraries and modules
-from libs.PipeLine import PipeLine, ScopedTiming  # Pipeline和计时工具 // pipeline and timing tool
-from libs.AIBase import AIBase  # 基础的AI类 // the base AI class
-from libs.AI2D import Ai2d  # 用于图像预处理的Ai2d模块 // Ai2d module for image preprocessing
-import os  # 操作系统接口 // operating system interfaces
-import ujson  # 快速JSON解析 // fast JSON parsing
-from media.media import *  # 媒体处理模块 // media processing module
-from time import *  # 时间模块 // time module
-import nncase_runtime as nn  # nncase运行时 // nncase runtime module
-import ulab.numpy as np  # ulab下的numpy，用于嵌入式数值计算 // ulab numpy for embedded numerical computation
-import time  # 标准时间模块 // standard time module
-import utime  # 微型嵌入式时间模块 // micro-time module for embedded systems
-import image  # 图像处理模块 // image processing module
-import random  # 随机数模块 // random number module
-import gc  # 垃圾回收模块 // garbage collection module
-import sys  # 系统模块 // system-specific parameters and functions
-import aicube  # aicube模块, 可用于AI算子 // aicube module, can be used for AI operators
-
-from libs.YbProtocol import YbProtocol
-from ybUtils.YbUart import YbUart
-
-import _thread
-import os
 from media.media import *
 from media.pyaudio import *
 import media.wave as wave
-import time
+import image
+from libs.PipeLine import PipeLine, ScopedTiming
+from libs.AIBase import AIBase
+from libs.AI2D import Ai2d
+from libs.YbProtocol import YbProtocol
+from ybUtils.YbUart import YbUart
+import nncase_runtime as nn
+import ulab.numpy as np
+import aicube
+import os, ujson, time, utime, gc, sys, random, _thread
 from ybUtils.YbKey import YbKey
-import ybUtils.YbRequests as urequests
-import YbRequests as requests2
-import os, time, gc
 from ybUtils.YbSpeaker import YbSpeaker
 from ybUtils.YbBuzzer import YbBuzzer
 from ybUtils.YbRGB import YbRGB
-import re
+import YbRequests as requests2
 
 # ============================================================
 # DashScope 配置 (独立运行: 替换笔记本服务器)
@@ -88,10 +71,6 @@ def connect_wifi():
         return True
     print("WiFi timeout!")
     return False
-
-def network_use_wlan(ssid, key):
-    # 保留旧接口兼容
-    return connect_wifi()
 
 class AudioRecorder:
     """
@@ -297,83 +276,6 @@ class AudioRecorder:
             output_stream.stop_stream()
             output_stream.close()
 
-
-def ensure_dir(directory):
-    """
-    递归创建目录，适用于MicroPython环境
-    """
-    # 如果目录为空字符串或根目录，直接返回
-    if not directory or directory == '/':
-        return
-
-    # 处理路径分隔符，确保使用标准格式
-    directory = directory.rstrip('/')
-
-    try:
-        # 尝试获取目录状态，如果目录存在就直接返回
-        print(os.stat(directory))
-        print(f'目录已存在: {directory}')
-        return
-    except OSError:
-        # 目录不存在，需要创建
-        # 分割路径以获取父目录
-        if '/' in directory:
-            parent = directory[:directory.rindex('/')]
-            if parent and parent != directory:  # 避免无限递归
-                ensure_dir(parent)
-
-        try:
-            os.mkdir(directory)
-            print(f'已创建目录: {directory}')
-        except OSError as e:
-            # 可能是并发创建导致的冲突，再次检查目录是否存在
-            try:
-                os.stat(directory)
-                print(f'目录已被其他进程创建: {directory}')
-            except:
-                # 如果仍然不存在，则确实出错了
-                print(f'创建目录时出错: {e}')
-    except Exception as e:
-        print(f'处理目录时出错: {e}')
-
-def analyze_speech(text):
-    # 转换为小写，便于匹配
-    text = text.lower()
-
-    # 简化正则表达式
-    what_pattern = "这是什么|这是甚么|这系什么|这系甚么"
-    is_what_query = bool(re.search(what_pattern, text))
-
-    # 检查是否包含"颜色"关键词
-    has_color = '颜色' in text
-
-    # 检查是否包含"东西"关键词
-    has_thing = '东西' in text
-
-    # 检查是否包含"哪些"关键词
-    has_which = '哪些' in text
-
-    # 根据条件判断返回值
-    if has_color:
-        if has_which:
-            return 1  # "颜色" + "哪些"
-        else:
-            return 2  # 只有"颜色"
-
-    if has_thing:
-        if has_which:
-            return 3  # "东西" + "哪些"
-        else:
-            return 4  # 只有"东西"
-
-    if is_what_query:
-        if has_color:
-            return 2  # "这是什么" + "颜色"
-        else:
-            return 4
-
-    # 如果没有匹配到任何模式，返回0
-    return 0
 
 recog_item = None
 latest_frame = None  # PipeLine最新帧，供拍照使用
