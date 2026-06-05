@@ -376,6 +376,7 @@ def analyze_speech(text):
     return 0
 
 recog_item = None
+latest_frame = None  # PipeLine最新帧，供拍照使用
 # 自定义自学习类
 # Custom self-learning class
 class SelfLearningApp(AIBase):
@@ -762,6 +763,8 @@ def exce_demo(pl, recong_only=False):
             # 获取当前帧图像数据
             # Capture the current frame from the sensor
             img = pl.get_frame()
+            global latest_frame
+            latest_frame = img
             time.sleep_ms(1)
             # 推理当前帧图像，得到输出特征
             # Run inference on the current frame to get features
@@ -813,21 +816,23 @@ voice_text_ret = None
 # DashScope API 函数 (替换笔记本:3001服务器)
 # ============================================================
 
-def upload_audio_dashscope(filename):
-    """上传音频到DashScope OSS"""
+MODEL_OMNI = "qwen-omni-turbo"
+
+def upload_to_oss(filename, model=MODEL_OMNI):
+    """上传文件到DashScope OSS (音频或图片)"""
     print("  Uploading to OSS...")
     gc.collect()
     policy_url = ("https://dashscope.aliyuncs.com/api/v1/uploads"
-                  "?action=getPolicy&model=qwen-audio-turbo")
-    headers = {"Authorization": f"Bearer {API_KEY}"}
+                  "?action=getPolicy&model=" + model)
+    headers = {"Authorization": "Bearer " + API_KEY}
     resp = requests2.get(policy_url, headers=headers, timeout=30)
     if resp.status_code != 200:
-        print(f"  getPolicy failed: {resp.status_code}")
+        print("  getPolicy failed: " + str(resp.status_code))
         return None
     policy = resp.json["data"]
     gc.collect()
     file_name = filename.split("/")[-1]
-    key = f"{policy['upload_dir']}/{file_name}"
+    key = policy["upload_dir"] + "/" + file_name
     with open(filename, "rb") as f:
         file_data = f.read()
     boundary = "----FormBoundary7MA4YWxkTrZu0gW"
@@ -850,38 +855,40 @@ def upload_audio_dashscope(filename):
                           headers={"Content-Type": "multipart/form-data; boundary=" + boundary}, timeout=60)
     if resp.status_code == 200:
         oss_url = "oss://" + key
-        print(f"  OSS: {oss_url}")
+        print("  OSS: " + oss_url)
         return oss_url
-    print(f"  OSS post failed: {resp.status_code}")
+    print("  OSS post failed: " + str(resp.status_code))
     return None
 
 
-def ask_qwen_with_context(oss_url, recog_item):
-    """Qwen-Audio 理解语音 + 结合识别结果回答"""
-    print("  Asking Qwen-Audio...")
+def ask_qwen_omni(audio_oss, image_oss):
+    """Qwen-Omni: 同时理解语音+画面, 直接回答"""
+    print("  Asking Qwen-Omni...")
     gc.collect()
-    if recog_item:
-        ctx = "用户摄像头前有一个物体，AI识别为：" + recog_item + "。请用中文简短回答用户关于这个物体的问题。"
-    else:
-        ctx = "摄像头没有识别到物体。请用中文简短告诉用户你没看到认识的物体。"
+    ctx = "你是K230视觉语音助手。请用中文简短口语化回答用户问题。能看到摄像头画面,也能听到用户语音。"
+    content_list = []
+    if image_oss:
+        content_list.append({"image": image_oss})
+    content_list.append({"audio": audio_oss})
     url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
-    headers = {"Authorization": "Bearer " + API_KEY, "Content-Type": "application/json", "X-DashScope-OssResourceResolve": "enable"}
-    body = {"model": "qwen-audio-turbo-latest", "input": {"messages": [
+    headers = {"Authorization": "Bearer " + API_KEY, "Content-Type": "application/json",
+               "X-DashScope-OssResourceResolve": "enable"}
+    body = {"model": MODEL_OMNI, "input": {"messages": [
         {"role": "system", "content": [{"text": ctx}]},
-        {"role": "user", "content": [{"audio": oss_url}]}
+        {"role": "user", "content": content_list}
     ]}}
     resp = requests2.post(url, headers=headers, json_data=body, timeout=60)
     if resp.status_code != 200:
-        print(f"  Qwen-Audio err: {resp.status_code}")
+        print("  Qwen-Omni err: " + str(resp.status_code))
         return None
     try:
         raw = resp.text if isinstance(resp.text, str) else resp.text.decode('utf-8')
         result = ujson.loads(raw)
         reply = result["output"]["choices"][0]["message"]["content"][0]["text"]
-        print(f"  Reply: {reply}")
+        print("  Reply: " + reply)
         return reply
     except Exception as e:
-        print(f"  Parse err: {e}")
+        print("  Parse err: " + str(e))
     return None
 
 
@@ -933,19 +940,45 @@ def play_audio_file(filename):
     except: pass
 
 
+def capture_snapshot():
+    """从PipeLine帧缓存保存快照"""
+    global latest_frame
+    try:
+        if latest_frame is not None:
+            latest_frame.save("/sdcard/snapshot.jpg")
+            print("  Snapshot saved")
+            return "/sdcard/snapshot.jpg"
+        print("  No frame available")
+        return None
+    except Exception as e:
+        print("  Snapshot err: " + str(e))
+        return None
+
+
 def async_get_voice_to_text():
-    """DashScope版语音识别: 上传录音→Qwen-Audio→返回文字"""
-    global voice_text_ret, recog_item
+    """Qwen-Omni版: 上传录音+拍照 → 多模态理解 → 返回回答"""
+    global voice_text_ret
     voice_text_ret = None
     try:
-        oss = upload_audio_dashscope("/sdcard/rec.wav")
-        if not oss:
+        audio_oss = upload_to_oss("/sdcard/rec.wav", MODEL_OMNI)
+        if not audio_oss:
             voice_text_ret = ""
             return
-        reply = ask_qwen_with_context(oss, recog_item)
+
+        # 拍照并上传
+        snap_path = capture_snapshot()
+        image_oss = None
+        if snap_path:
+            image_oss = upload_to_oss(snap_path, MODEL_OMNI)
+            try:
+                os.remove(snap_path)
+            except:
+                pass
+
+        reply = ask_qwen_omni(audio_oss, image_oss)
         voice_text_ret = reply if reply else ""
     except Exception as e:
-        print(f"  voice_to_text err: {e}")
+        print("  omni err: " + str(e))
         voice_text_ret = ""
 
 record_flag = False
