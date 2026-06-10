@@ -1054,12 +1054,21 @@ def voice_serv():
     while True:
         rgb.show_rgb((0, 255, 0))       # 绿=就绪
 
-        # 自动检测: 识别到药品 → 立刻播放本地WAV
+        # 自动检测: 识别到药品 → 屏幕显示+播放本地WAV
         if recog_item and recog_item in MEDICINE_INFO:
             now = time.ticks_ms()
-            if recog_item != last_played or time.ticks_diff(now, last_time) > 5000:
+            if recog_item != last_played or time.ticks_diff(now, last_time) > 10000:
                 print("  Auto: " + recog_item)
                 rgb.show_rgb((0, 0, 255))
+                try:
+                    img2 = image.Image(640, 480, image.RGB565)
+                    img2.clear()
+                    txt = recog_item
+                    tx = (screen_width - len(txt) * 16) // 2
+                    img2.draw_string(tx, 220, txt, color=(255, 255, 255, 255))
+                    Display.show_image(img2, 0, 0, Display.LAYER_OSD3)
+                except:
+                    pass
                 local_respond(recog_item)
                 last_played = recog_item
                 last_time = now
