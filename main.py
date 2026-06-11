@@ -393,7 +393,8 @@ def analyze_speech(text):
 
 recog_item = None
 latest_frame = None
-audio_busy = False     # 播报中禁止重复触发
+audio_busy = False
+pl = None  # PipeLine全局引用，供拍照使用     # 播报中禁止重复触发
 last_name = ""
 last_tm = 0
 # 自定义自学习类
@@ -966,15 +967,12 @@ def play_audio_file(filename):
 
 
 def capture_snapshot():
-    """从PipeLine帧缓存保存快照"""
-    global latest_frame
+    """从PipeLine OSD图像保存快照"""
+    global pl
     try:
-        if latest_frame is not None:
-            latest_frame.save("/sdcard/snapshot.jpg")
-            print("  Snapshot saved")
-            return "/sdcard/snapshot.jpg"
-        print("  No frame available")
-        return None
+        pl.osd_img.save("/sdcard/snapshot.jpg")
+        print("  Snapshot saved")
+        return "/sdcard/snapshot.jpg"
     except Exception as e:
         print("  Snapshot err: " + str(e))
         return None
@@ -1149,6 +1147,7 @@ if __name__ == "__main__":
         print("=== 识别模式 ===")
 
     _thread.start_new_thread(voice_serv, ())
+    global pl
     pl = PipeLine(rgb888p_size=rgb888p_size, display_size=display_size, display_mode=display_mode)
     pl.create()
     exce_demo(pl, not REGISTER_MODE)
