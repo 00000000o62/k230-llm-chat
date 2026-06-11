@@ -393,6 +393,7 @@ def analyze_speech(text):
 
 recog_item = None
 latest_frame = None  # PipeLine最新帧，供拍照使用
+pause_recog = False  # 播报时暂停识别
 # 自定义自学习类
 # Custom self-learning class
 class SelfLearningApp(AIBase):
@@ -551,7 +552,9 @@ class SelfLearningApp(AIBase):
     # 绘制结果，绘制特征采集框和特征分类框
     # Draw results displaying feature collection and classification boxes
     def draw_result(self, pl, feature):
-        global recog_item
+        global recog_item, pause_recog
+        if pause_recog:
+            return
         """
         绘制检测结果到屏幕
         Draw the detection results on the screen.
@@ -785,26 +788,24 @@ def exce_demo(pl, recong_only=False):
         # 无限循环处理每一帧数据
         # Infinite loop to process each frame
         while True:
-            # 获取当前帧图像数据
-            # Capture the current frame from the sensor
+            global latest_frame, pause_recog
             img = pl.get_frame()
-            global latest_frame
             latest_frame = img
             time.sleep_ms(1)
-            # 推理当前帧图像，得到输出特征
-            # Run inference on the current frame to get features
+
+            if pause_recog:
+                # 播报中，只显示画面不更新识别
+                pl.show_image()
+                time.sleep_ms(100)
+                gc.collect()
+                continue
+
             res = sl.run(img)
             time.sleep_ms(1)
-            # 绘制结果到Pipeline的OSD图像中（包含特征采集框等信息）
-            # Draw the results (feature collection box and matching info) onto the pipeline's OSD image.
             sl.draw_result(pl, res)
             time.sleep_ms(1)
-            # 显示当前的图像及绘制的OSD信息
-            # Display the image with the drawn OSD information.
             pl.show_image()
             time.sleep_ms(1)
-            # 主动调用垃圾回收，释放内存
-            # Explicitly call garbage collection to free memory.
             gc.collect()
             time.sleep_ms(5)
     except Exception as e:
@@ -1041,37 +1042,37 @@ def async_record():
 
 
 def voice_serv():
-    global recorder, voice_text_ret, record_flag
+    global recorder, voice_text_ret, record_flag, recog_item, pause_recog
 
     # WiFi 后台尝试连接(供云端兜底使用)
     _thread.start_new_thread(connect_wifi, ())
 
     print("Voice service ready.")
 
-    last_played = ""
-    last_time = 0
-
     while True:
-        rgb.show_rgb((0, 255, 0))       # 绿=就绪
+        rgb.show_rgb((0, 255, 0))
 
-        # 自动检测: 识别到药品 → 屏幕显示+播放本地WAV
-        if recog_item and recog_item in MEDICINE_INFO:
-            now = time.ticks_ms()
-            if recog_item != last_played or time.ticks_diff(now, last_time) > 10000:
-                print("  Auto: " + recog_item)
-                rgb.show_rgb((0, 0, 255))
-                try:
-                    img2 = image.Image(640, 480, image.RGB565)
-                    img2.clear()
-                    txt = recog_item
-                    tx = (screen_width - len(txt) * 16) // 2
-                    img2.draw_string(tx, 220, txt, color=(255, 255, 255, 255))
-                    Display.show_image(img2, 0, 0, Display.LAYER_OSD3)
-                except:
-                    pass
-                local_respond(recog_item)
-                last_played = recog_item
-                last_time = now
+        if recog_item and recog_item in MEDICINE_INFO and not pause_recog:
+            name = recog_item
+            print("  Auto: " + name)
+            # 暂停识别
+            pause_recog = True
+            recog_item = None
+            rgb.show_rgb((0, 0, 255))
+            # 屏幕显示
+            try:
+                img2 = image.Image(640, 480, image.RGB565)
+                img2.clear()
+                tx = (screen_width - len(name) * 16) // 2
+                img2.draw_string(tx, 220, name, color=(255, 255, 255, 255))
+                Display.show_image(img2, 0, 0, Display.LAYER_OSD3)
+            except:
+                pass
+            # 播放音频
+            local_respond(name)
+            # 恢复识别
+            pause_recog = False
+            recog_item = None
 
         time.sleep_ms(200)
 
