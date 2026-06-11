@@ -919,26 +919,35 @@ def ask_qwen_omni(audio_oss, image_oss):
 
 
 def text_to_speech_dashscope(text):
-    """Qwen3-TTS-Flash 文字转语音"""
-    print(f"  TTS: {text[:40]}...")
+    """Qwen3-TTS-Flash 文字转语音(带下载重试)"""
+    print("  TTS: " + text[:40] + "...")
     gc.collect()
     url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
     headers = {"Authorization": "Bearer " + API_KEY, "Content-Type": "application/json"}
     body = {"model": "qwen3-tts-flash", "input": {"text": text, "voice": "Cherry", "language_type": "Chinese"}}
     resp = requests2.post(url, headers=headers, json_data=body, timeout=60)
     if resp.status_code != 200:
+        print("  TTS API err: " + str(resp.status_code))
         return False
     try:
         raw = resp.text if isinstance(resp.text, str) else resp.text.decode('utf-8')
         audio_url = ujson.loads(raw)["output"]["audio"]["url"]
     except:
         return False
-    audio_resp = requests2.get(audio_url, timeout=30)
-    if audio_resp.status_code != 200:
-        return False
-    with open("/sdcard/tts_reply.wav", "wb") as f:
-        f.write(audio_resp.content)
-    return True
+    # 下载带重试
+    for retry in range(3):
+        gc.collect()
+        audio_resp = requests2.get(audio_url, timeout=60)
+        if audio_resp.status_code == 200:
+            data = audio_resp.content
+            if len(data) > 1000:
+                with open("/sdcard/tts_reply.wav", "wb") as f:
+                    f.write(data)
+                print("  TTS saved: " + str(len(data)) + " bytes")
+                return True
+        print("  download retry " + str(retry + 1))
+        time.sleep(1)
+    return False
 
 
 def play_audio_file(filename):
@@ -1147,7 +1156,6 @@ if __name__ == "__main__":
         print("=== 识别模式 ===")
 
     _thread.start_new_thread(voice_serv, ())
-    global pl
     pl = PipeLine(rgb888p_size=rgb888p_size, display_size=display_size, display_mode=display_mode)
     pl.create()
     exce_demo(pl, not REGISTER_MODE)
