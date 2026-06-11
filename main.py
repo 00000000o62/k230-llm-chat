@@ -52,7 +52,7 @@ API_KEY = "sk-7f1f0e35b05d44239b6eefa43cff1996"
 # ============================================================
 
 # ============================================================
-REGISTER_MODE = True   # True=注册药盒, 注册完成后改为False
+REGISTER_MODE = False  # True=注册药盒, 注册完成后改为False
 GEN_WAV = False         # True=联网生成一次播报WAV文件, 完成后改为False
 
 # ============================================================
@@ -579,12 +579,11 @@ class SelfLearningApp(AIBase):
                 msg = self.labels[self.category_index] + "_" + str(idx) + ".bin"
                 if self.time_now % 30 == 0:
                     print(">>> REG: " + msg + "  (frame " + str(self.time_now) + ")")
-                # 用Display.show_image确保文字显示
                 try:
-                    reg_img = image.Image(640, 60, image.RGB565)
+                    reg_img = image.Image(640, 480, image.RGB565)
                     reg_img.clear()
-                    reg_img.draw_string(10, 5, msg, color=(255, 255, 255, 255))
-                    reg_img.draw_string(10, 25, "Put in box", color=(255, 255, 255, 255))
+                    reg_img.draw_string_advanced(10, 10, 22, msg, color=(255, 255, 0, 0))
+                    reg_img.draw_string_advanced(10, 40, 18, "Put object in yellow box", color=(255, 255, 0, 0))
                     Display.show_image(reg_img, 0, 0, Display.LAYER_OSD3)
                 except:
                     pass
@@ -1058,31 +1057,23 @@ def voice_serv():
                 audio_busy = True
                 last_name = name
                 last_tm = time.ticks_ms()
-                _thread.start_new_thread(do_play, (name,))
+                rgb.show_rgb((0, 0, 255))
+                try:
+                    img2 = image.Image(640, 480, image.RGB565)
+                    img2.clear()
+                    img2.draw_string_advanced(10, 10, 16, name, color=(255, 255, 0, 0))
+                    Display.show_image(img2, 0, 0, Display.LAYER_OSD3)
+                except:
+                    pass
+                local_respond(name)
+                try:
+                    img2.clear()
+                    Display.show_image(img2, 0, 0, Display.LAYER_OSD3)
+                except:
+                    pass
+                audio_busy = False
 
         time.sleep_ms(50)
-
-
-def do_play(name):
-    global audio_busy
-    rgb.show_rgb((0, 0, 255))
-    # 屏幕显示药名
-    try:
-        img2 = image.Image(640, 480, image.RGB565)
-        img2.clear()
-        tx = (screen_width - len(name) * 16) // 2
-        img2.draw_string(tx, 220, name, color=(255, 255, 255, 255))
-        Display.show_image(img2, 0, 0, Display.LAYER_OSD3)
-    except:
-        pass
-    local_respond(name)
-    # 恢复
-    try:
-        img2.clear()
-        Display.show_image(img2, 0, 0, Display.LAYER_OSD3)
-    except:
-        pass
-    audio_busy = False
 
 
 
