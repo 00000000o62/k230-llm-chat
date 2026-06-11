@@ -979,11 +979,31 @@ def capture_snapshot():
     """从PipeLine OSD图像保存快照"""
     global pl
     try:
-        pl.osd_img.save("/sdcard/snapshot.jpg")
-        print("  Snapshot saved")
-        return "/sdcard/snapshot.jpg"
+        path = "/sdcard/snapshot.jpg"
+        print("  saving snapshot to " + path)
+        pl.osd_img.save(path)
+        sz = os.stat(path)[6]
+        print("  snapshot saved: " + str(sz) + " bytes")
+        # 另存一份原始帧到PNG备用
+        try:
+            img = pl.get_frame()
+            if hasattr(img, 'save'):
+                img.save("/sdcard/snapshot_raw.jpg")
+                print("  raw frame saved")
+        except:
+            pass
+        return path
     except Exception as e:
         print("  Snapshot err: " + str(e))
+        try:
+            # 尝试直接从OSD图像复制到新图像保存
+            img2 = image.Image(pl.osd_img.width(), pl.osd_img.height(), image.RGB565)
+            img2.draw_image(pl.osd_img, 0, 0)
+            img2.save("/sdcard/snapshot.jpg")
+            print("  snapshot via copy saved")
+            return "/sdcard/snapshot.jpg"
+        except Exception as e2:
+            print("  Snapshot err2: " + str(e2))
         return None
 
 
@@ -1014,22 +1034,41 @@ def async_get_voice_to_text():
     global voice_text_ret
     voice_text_ret = None
     try:
+        print("  [1/4] upload audio...")
         audio_oss = upload_to_oss("/sdcard/rec.wav", MODEL_OMNI)
         if not audio_oss:
+            print("  audio upload FAILED")
             voice_text_ret = ""
             return
+        print("  [2/4] audio OK")
 
-        # 拍照并上传
+        print("  [3/4] snapshot + upload image...")
         snap_path = capture_snapshot()
         image_oss = None
         if snap_path:
+            try:
+                sz = os.stat(snap_path)[6]
+                print("  snap file: " + str(sz) + " bytes")
+            except:
+                print("  snap stat FAILED")
             image_oss = upload_to_oss(snap_path, MODEL_OMNI)
+            if image_oss:
+                print("  [3/4] image OK")
+            else:
+                print("  image upload FAILED")
             try:
                 os.remove(snap_path)
             except:
                 pass
+        else:
+            print("  snapshot FAILED (no path)")
 
+        print("  [4/4] ask Qwen-Omni (img=" + str(image_oss is not None) + ")")
         reply = ask_qwen_omni(audio_oss, image_oss)
+        if reply:
+            print("  reply OK: " + reply[:50])
+        else:
+            print("  reply FAILED")
         voice_text_ret = reply if reply else ""
     except Exception as e:
         print("  omni err: " + str(e))
