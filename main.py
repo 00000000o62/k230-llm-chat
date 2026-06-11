@@ -52,7 +52,7 @@ API_KEY = "sk-7f1f0e35b05d44239b6eefa43cff1996"
 # ============================================================
 
 # ============================================================
-REGISTER_MODE = False  # True=注册药盒, 注册完成后改为False
+REGISTER_MODE = True   # True=注册药盒, 注册完成后改为False
 GEN_WAV = False         # True=联网生成一次播报WAV文件, 完成后改为False
 
 # ============================================================
@@ -458,7 +458,7 @@ class SelfLearningApp(AIBase):
 
         # 单个特征采集之间间隔的帧数
         # Interval (in frame count) between two feature collections
-        self.time_one = 60
+        self.time_one = 33  # 每特征约3.3秒, 每个物品约10秒
 
         # 初始化时间累积变量
         # Initialize time accumulation variables
@@ -577,11 +577,17 @@ class SelfLearningApp(AIBase):
                 self.time_now += 1
                 idx = int(self.time_now - 1) // self.time_one
                 msg = self.labels[self.category_index] + "_" + str(idx) + ".bin"
-                # 串口+屏幕双重提示
                 if self.time_now % 30 == 0:
                     print(">>> REG: " + msg + "  (frame " + str(self.time_now) + ")")
-                pl.osd_img.draw_string(10, 10, msg, color=(255, 255, 255, 255))
-                pl.osd_img.draw_string(10, 30, "Put object in box", color=(255, 255, 255, 255))
+                # 用Display.show_image确保文字显示
+                try:
+                    reg_img = image.Image(640, 60, image.RGB565)
+                    reg_img.clear()
+                    reg_img.draw_string(10, 5, msg, color=(255, 255, 255, 255))
+                    reg_img.draw_string(10, 25, "Put in box", color=(255, 255, 255, 255))
+                    Display.show_image(reg_img, 0, 0, Display.LAYER_OSD3)
+                except:
+                    pass
                 # 保存当前特征到指定文件
                 # Save the current feature to a file for later matching
                 with open(self.database_path + self.labels[self.category_index] + "_" + str(int(self.time_now-1) // self.time_one) + ".bin", 'wb') as f:
