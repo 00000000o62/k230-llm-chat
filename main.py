@@ -1039,19 +1039,21 @@ def async_record():
 
 
 def voice_serv():
-    global audio_busy, last_name, last_tm
+    global audio_busy, last_name, last_tm, voice_text_ret, record_flag
 
     _thread.start_new_thread(connect_wifi, ())
+    key = YbKey()
 
-    print("Voice service ready.")
+    print("Voice service ready. Auto-recog or press button for cloud.")
 
     while True:
         rgb.show_rgb((0, 255, 0))
 
+        # 自动路径: 本地识别到药品 → 播WAV
         if recog_item and recog_item in MEDICINE_INFO and not audio_busy:
             if recog_item != last_name:
                 name = recog_item
-                print("  Play: " + name)
+                print("  Auto: " + name)
                 audio_busy = True
                 last_name = name
                 rgb.show_rgb((0, 0, 255))
@@ -1072,6 +1074,29 @@ def voice_serv():
 
         if not recog_item:
             last_name = ""
+
+        # 按键路径: 按住说话 → 云端Qwen-Omni → TTS回答
+        if key.is_pressed() and not audio_busy:
+            audio_busy = True
+            rgb.show_rgb((255, 0, 0))
+            print("  Cloud: recording...")
+            record_flag = False
+            _thread.start_new_thread(async_record, ())
+            while record_flag == False:
+                time.sleep_ms(5)
+            rgb.show_rgb((0, 0, 255))
+            async_get_voice_to_text()
+            while voice_text_ret is None:
+                time.sleep_ms(5)
+            if voice_text_ret and voice_text_ret.strip():
+                print("  Cloud reply: " + voice_text_ret)
+                if text_to_speech_dashscope(voice_text_ret):
+                    play_audio_file("/sdcard/tts_reply.wav")
+                else:
+                    play_audio_file("/sdcard/utils/saywhat.wav")
+            else:
+                play_audio_file("/sdcard/utils/sayagain.wav")
+            audio_busy = False
 
         time.sleep_ms(50)
 
