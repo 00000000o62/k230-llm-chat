@@ -1036,49 +1036,94 @@ def local_respond(name):
                 pass
 
 
+def audio_to_text(audio_oss):
+    """Qwen-Audio-Turbo 语音转文字"""
+    print("  ASR...")
+    url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+    headers = {"Authorization": "Bearer " + API_KEY, "Content-Type": "application/json",
+               "X-DashScope-OssResourceResolve": "enable"}
+    body = {"model": "qwen-audio-turbo-latest", "input": {"messages": [
+        {"role": "system", "content": [{"text": "你是一个语音转文字工具，把用户的语音转成文字输出。"}]},
+        {"role": "user", "content": [{"audio": audio_oss}]}
+    ]}}
+    resp = requests2.post(url, headers=headers, json_data=body, timeout=60)
+    if resp.status_code == 200:
+        try:
+            raw = resp.text if isinstance(resp.text, str) else resp.text.decode('utf-8')
+            text = ujson.loads(raw)["output"]["choices"][0]["message"]["content"][0]["text"]
+            print("  ASR: " + text)
+            return text
+        except Exception as e:
+            print("  ASR parse err: " + str(e))
+    return None
+
+
+def ask_qwen_omni_text_img(image_oss, question_text):
+    """Qwen-Omni: 图片+文字 → 回答"""
+    print("  Qwen-Omni (img+text)...")
+    gc.collect()
+    url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+    headers = {"Authorization": "Bearer " + API_KEY, "Content-Type": "application/json",
+               "X-DashScope-OssResourceResolve": "enable"}
+    body = {"model": MODEL_OMNI, "input": {"messages": [{
+        "role": "user",
+        "content": [
+            {"image": image_oss},
+            {"text": question_text}
+        ]
+    }]}}
+    resp = requests2.post(url, headers=headers, json_data=body, timeout=60)
+    print("  Omni status: " + str(resp.status_code))
+    if resp.status_code != 200:
+        try:
+            err = resp.text if isinstance(resp.text, str) else resp.text.decode('utf-8')
+            print("  Omni err: " + str(err[:300]))
+        except:
+            pass
+        return None
+    try:
+        raw = resp.text if isinstance(resp.text, str) else resp.text.decode('utf-8')
+        reply = ujson.loads(raw)["output"]["choices"][0]["message"]["content"][0]["text"]
+        print("  Reply: " + reply)
+        return reply
+    except Exception as e:
+        print("  Parse err: " + str(e))
+    return None
+
+
 def async_get_voice_to_text():
-    """Qwen-Omni版: 上传录音+拍照 → 多模态理解 → 返回回答"""
+    """录音→ASR转文字 + 拍照→Qwen-Omni(图+文字)→回答"""
     global voice_text_ret
     voice_text_ret = None
     try:
-        print("  [1/4] upload audio...")
-        audio_oss = upload_to_oss("/sdcard/rec.wav", MODEL_OMNI)
+        # 上传音频
+        print("  [1] upload audio...")
+        audio_oss = upload_to_oss("/sdcard/rec.wav", "qwen-audio-turbo")
         if not audio_oss:
-            print("  audio upload FAILED")
             voice_text_ret = ""
             return
-        print("  [2/4] audio OK")
-
-        print("  [3/4] snapshot + upload image...")
+        # ASR 语音转文字
+        print("  [2] ASR...")
+        text = audio_to_text(audio_oss)
+        if not text:
+            voice_text_ret = ""
+            return
+        # 拍照上传
+        print("  [3] snapshot...")
         snap_path = capture_snapshot()
         image_oss = None
         if snap_path:
-            try:
-                sz = os.stat(snap_path)[6]
-                print("  snap file: " + str(sz) + " bytes")
-            except:
-                print("  snap stat FAILED")
             image_oss = upload_to_oss(snap_path, MODEL_OMNI)
-            if image_oss:
-                print("  [3/4] image OK")
-            else:
-                print("  image upload FAILED")
             try:
                 os.remove(snap_path)
             except:
                 pass
-        else:
-            print("  snapshot FAILED (no path)")
-
-        print("  [4/4] ask Qwen-Omni (img=" + str(image_oss is not None) + ")")
-        reply = ask_qwen_omni(audio_oss, image_oss)
-        if reply:
-            print("  reply OK: " + reply[:50])
-        else:
-            print("  reply FAILED")
+        # Qwen-Omni: 图片+文字
+        print("  [4] ask Omni...")
+        reply = ask_qwen_omni_text_img(image_oss, text)
         voice_text_ret = reply if reply else ""
     except Exception as e:
-        print("  omni err: " + str(e))
+        print("  err: " + str(e))
         voice_text_ret = ""
 
 record_flag = False
