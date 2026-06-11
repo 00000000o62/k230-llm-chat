@@ -983,35 +983,33 @@ def play_audio_file(filename):
 
 
 def capture_snapshot():
-    """从PipeLine OSD图像保存快照"""
-    global pl
+    """截取LCD显示画面保存为JPEG"""
+    path = "/sdcard/snapshot.jpg"
     try:
-        path = "/sdcard/snapshot.jpg"
-        print("  saving snapshot to " + path)
-        pl.osd_img.save(path)
-        sz = os.stat(path)[6]
-        print("  snapshot saved: " + str(sz) + " bytes")
-        # 另存一份原始帧到PNG备用
+        # 截取屏幕内容
+        Display.show_image(None, 0, 0, Display.LAYER_VIDEO1)
+        time.sleep_ms(50)
+        img = image.snapshot()
+        if img:
+            img.save(path)
+            sz = os.stat(path)[6]
+            print("  snapshot: " + str(sz) + " bytes")
+            return path
+    except Exception as e:
+        print("  snap err: " + str(e))
         try:
-            img = pl.get_frame()
-            if hasattr(img, 'save'):
-                img.save("/sdcard/snapshot_raw.jpg")
-                print("  raw frame saved")
+            # 兜底：复制OSD图层
+            global pl
+            w = pl.osd_img.width()
+            h = pl.osd_img.height()
+            img2 = image.Image(w, h, image.RGB565)
+            img2.draw_image(pl.osd_img, 0, 0)
+            img2.save(path)
+            print("  snap fallback: " + str(os.stat(path)[6]) + " bytes")
+            return path
         except:
             pass
-        return path
-    except Exception as e:
-        print("  Snapshot err: " + str(e))
-        try:
-            # 尝试直接从OSD图像复制到新图像保存
-            img2 = image.Image(pl.osd_img.width(), pl.osd_img.height(), image.RGB565)
-            img2.draw_image(pl.osd_img, 0, 0)
-            img2.save("/sdcard/snapshot.jpg")
-            print("  snapshot via copy saved")
-            return "/sdcard/snapshot.jpg"
-        except Exception as e2:
-            print("  Snapshot err2: " + str(e2))
-        return None
+    return None
 
 
 def local_respond(name):
@@ -1095,39 +1093,55 @@ def ask_qwen_omni_text_img(image_oss, question_text):
 
 
 def async_get_voice_to_text():
-    """录音→ASR转文字 + 拍照→Qwen-Omni(图+文字)→回答"""
+    """录音→ASR转文字 + 药品上下文→LLM回答"""
     global voice_text_ret
     voice_text_ret = None
     try:
-        # 上传音频
         print("  [1] upload audio...")
         audio_oss = upload_to_oss("/sdcard/rec.wav", "qwen-audio-turbo")
         if not audio_oss:
             voice_text_ret = ""
             return
-        # ASR 语音转文字
         print("  [2] ASR...")
         text = audio_to_text(audio_oss)
         if not text:
             voice_text_ret = ""
             return
-        # 拍照上传
-        print("  [3] snapshot...")
-        snap_path = capture_snapshot()
-        image_oss = None
-        if snap_path:
-            image_oss = upload_to_oss(snap_path, MODEL_OMNI)
-            try:
-                os.remove(snap_path)
-            except:
-                pass
-        # Qwen-Omni: 图片+文字
-        print("  [4] ask Omni...")
-        reply = ask_qwen_omni_text_img(image_oss, text)
+        # 构建药品上下文
+        ctx = ""
+        if recog_item and recog_item in MEDICINE_INFO:
+            ctx = "摄像头看到: " + recog_item + "。" + MEDICINE_INFO[recog_item]
+        print("  [3] ask LLM...")
+        reply = ask_qwen_text(text, ctx)
         voice_text_ret = reply if reply else ""
     except Exception as e:
         print("  err: " + str(e))
         voice_text_ret = ""
+
+
+def ask_qwen_text(question, context):
+    """Qwen-Turbo: 纯文字问答(快)"""
+    print("  LLM...")
+    gc.collect()
+    url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+    headers = {"Authorization": "Bearer " + API_KEY, "Content-Type": "application/json"}
+    msgs = [{"role": "system", "content": "你是用药助手。用一两句话简短回答。"}]
+    if context:
+        msgs.append({"role": "system", "content": context})
+    msgs.append({"role": "user", "content": question})
+    body = {"model": "qwen-turbo", "messages": msgs}
+    resp = requests2.post(url, headers=headers, json_data=body, timeout=60)
+    if resp.status_code == 200:
+        try:
+            raw = resp.text if isinstance(resp.text, str) else resp.text.decode('utf-8')
+            reply = ujson.loads(raw)["choices"][0]["message"]["content"]
+            print("  Reply: " + reply)
+            return reply
+        except Exception as e:
+            print("  Parse err: " + str(e))
+    else:
+        print("  LLM err: " + str(resp.status_code))
+    return None
 
 record_flag = False
 key = YbKey()
