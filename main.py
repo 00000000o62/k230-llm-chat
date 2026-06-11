@@ -1059,13 +1059,16 @@ def audio_to_text(audio_oss):
 
 
 def ask_qwen_omni_text_img(image_oss, question_text):
-    """Qwen-Omni: 图片+文字 → 回答"""
+    """Qwen-Omni: 图片+文字 → 简短回答"""
     print("  Qwen-Omni (img+text)...")
     gc.collect()
     url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
     headers = {"Authorization": "Bearer " + API_KEY, "Content-Type": "application/json",
                "X-DashScope-OssResourceResolve": "enable"}
     body = {"model": MODEL_OMNI, "input": {"messages": [{
+        "role": "system",
+        "content": [{"text": "你是语音助手。用一两句话简短回答，不超过50字。"}]
+    }, {
         "role": "user",
         "content": [
             {"image": image_oss},
