@@ -804,16 +804,13 @@ def exce_demo(pl, recong_only=False):
             if take_snap:
                 take_snap = False
                 try:
-                    s = Sensor()
-                    s.reset()
-                    time.sleep_ms(200)
-                    s.set_pixformat(s.RGB565)
-                    s.set_framesize(s.VGA)
-                    time.sleep_ms(50)
-                    snap = s.snapshot()
-                    snap.save("/sdcard/snapshot.jpg")
+                    # 从OSD复制画面(含摄像头+叠加层)
+                    w = pl.osd_img.width()
+                    h = pl.osd_img.height()
+                    simg = image.Image(w, h, image.RGB565)
+                    simg.draw_image(pl.osd_img, 0, 0)
+                    simg.save("/sdcard/snapshot.jpg")
                     print("  snap OK: " + str(os.stat("/sdcard/snapshot.jpg")[6]))
-                    s.deinit()
                 except Exception as e:
                     print("  snap err: " + str(e))
 
@@ -1090,31 +1087,34 @@ def audio_to_text(audio_oss):
 
 
 def ask_qwen_omni_text_img(image_oss, question_text):
-    """Qwen-Omni: 图片+文字 → 简短回答"""
-    print("  Qwen-Omni (img+text)...")
+    """Qwen-Omni看图回答, 无图时用Qwen-Turbo文字问答"""
     gc.collect()
     url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
     headers = {"Authorization": "Bearer " + API_KEY, "Content-Type": "application/json",
                "X-DashScope-OssResourceResolve": "enable"}
-    body = {"model": MODEL_OMNI, "input": {"messages": [{
-        "role": "system",
-        "content": [{"text": "你是语音助手。用一两句话简短回答，不超过50字。"}]
-    }, {
-        "role": "user",
-        "content": [
-            {"image": image_oss},
-            {"text": question_text}
-        ]
-    }]}}
+    if image_oss:
+        print("  Omni (img+text)...")
+        body = {"model": MODEL_OMNI, "input": {"messages": [{
+            "role": "system", "content": [{"text": "用一两句话简短回答，不超过50字。"}]
+        }, {
+            "role": "user", "content": [
+                {"image": image_oss},
+                {"text": question_text}
+            ]
+        }]}}
+    else:
+        print("  (no image, using text fallback)")
+        return ask_qwen_text_fallback(question_text)
     resp = requests2.post(url, headers=headers, json_data=body, timeout=60)
-    print("  Omni status: " + str(resp.status_code))
+    print("  status: " + str(resp.status_code))
     if resp.status_code != 200:
         try:
             err = resp.text if isinstance(resp.text, str) else resp.text.decode('utf-8')
-            print("  Omni err: " + str(err[:300]))
+            print("  err: " + str(err[:300]))
         except:
             pass
-        return None
+        # 兜底: 用Qwen-Turbo纯文字
+        return ask_qwen_text_fallback(question_text)
     try:
         raw = resp.text if isinstance(resp.text, str) else resp.text.decode('utf-8')
         reply = ujson.loads(raw)["output"]["choices"][0]["message"]["content"][0]["text"]
@@ -1122,6 +1122,26 @@ def ask_qwen_omni_text_img(image_oss, question_text):
         return reply
     except Exception as e:
         print("  Parse err: " + str(e))
+    return ask_qwen_text_fallback(question_text)
+
+
+def ask_qwen_text_fallback(question_text):
+    """Qwen-Turbo纯文字兜底"""
+    print("  Qwen-Turbo fallback...")
+    gc.collect()
+    url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+    headers = {"Authorization": "Bearer " + API_KEY, "Content-Type": "application/json"}
+    body = {"model": "qwen-turbo", "messages": [
+        {"role": "system", "content": "用一两句话简短回答。"},
+        {"role": "user", "content": question_text}
+    ]}
+    resp = requests2.post(url, headers=headers, json_data=body, timeout=60)
+    if resp.status_code == 200:
+        try:
+            raw = resp.text if isinstance(resp.text, str) else resp.text.decode('utf-8')
+            return ujson.loads(raw)["choices"][0]["message"]["content"]
+        except:
+            pass
     return None
 
 
