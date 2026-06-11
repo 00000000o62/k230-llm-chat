@@ -947,7 +947,7 @@ def text_to_speech_dashscope(text):
     gc.collect()
     url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
     headers = {"Authorization": "Bearer " + API_KEY, "Content-Type": "application/json"}
-    body = {"model": "qwen3-tts-flash", "input": {"text": text, "voice": "Cherry", "language_type": "Chinese"}}
+    body = {"model": "qwen-tts-latest", "input": {"text": text[:60], "voice": "Cherry", "language_type": "Chinese"}}
     resp = requests2.post(url, headers=headers, json_data=body, timeout=90)
     if resp.status_code != 200:
         print("  TTS API err: " + str(resp.status_code))
@@ -1095,7 +1095,7 @@ def ask_qwen_omni_text_img(image_oss, question_text):
     if image_oss:
         print("  Omni (img+text)...")
         body = {"model": MODEL_OMNI, "input": {"messages": [{
-            "role": "system", "content": [{"text": "用一两句话简短回答，不超过20字。"}]
+            "role": "system", "content": [{"text": "用一两句话简短回答，不超过15字。"}]
         }, {
             "role": "user", "content": [
                 {"image": image_oss},
@@ -1239,8 +1239,9 @@ def voice_serv():
             while voice_text_ret is None:
                 time.sleep_ms(5)
             if voice_text_ret and voice_text_ret.strip():
-                print("  Cloud reply: " + voice_text_ret)
-                if text_to_speech_dashscope(voice_text_ret):
+                tts_text = voice_text_ret[:60]
+                print("  Cloud reply: " + tts_text)
+                if text_to_speech_dashscope(tts_text):
                     play_audio_file("/sdcard/tts_reply.wav")
                 else:
                     play_audio_file("/sdcard/utils/saywhat.wav")
