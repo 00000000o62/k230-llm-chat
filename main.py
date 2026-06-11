@@ -904,8 +904,15 @@ def ask_qwen_omni(audio_oss, image_oss):
         {"role": "user", "content": content_list}
     ]}}
     resp = requests2.post(url, headers=headers, json_data=body, timeout=60)
+    print("  Omni status: " + str(resp.status_code))
     if resp.status_code != 200:
-        print("  Qwen-Omni err: " + str(resp.status_code))
+        try:
+            err = resp.text
+            if isinstance(err, bytes):
+                err = err.decode('utf-8')
+            print("  Omni error body: " + str(err[:300]))
+        except:
+            pass
         return None
     try:
         raw = resp.text if isinstance(resp.text, str) else resp.text.decode('utf-8')
