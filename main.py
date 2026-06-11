@@ -1049,14 +1049,11 @@ def voice_serv():
         rgb.show_rgb((0, 255, 0))
 
         if recog_item and recog_item in MEDICINE_INFO and not audio_busy:
-            now = time.ticks_ms()
-            same = (recog_item == last_name and time.ticks_diff(now, last_tm) < 10000)
-            if not same:
+            if recog_item != last_name:
                 name = recog_item
                 print("  Play: " + name)
                 audio_busy = True
                 last_name = name
-                last_tm = time.ticks_ms()
                 rgb.show_rgb((0, 0, 255))
                 try:
                     img2 = image.Image(640, 480, image.RGB565)
@@ -1072,6 +1069,9 @@ def voice_serv():
                 except:
                     pass
                 audio_busy = False
+
+        if not recog_item:
+            last_name = ""
 
         time.sleep_ms(50)
 
