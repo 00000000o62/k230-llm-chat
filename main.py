@@ -892,7 +892,7 @@ def upload_to_oss(filename, model=MODEL_OMNI):
     end_bytes = ("\r\n--" + boundary + "--\r\n").encode("utf-8")
     body = text_bytes + file_data + end_bytes
     resp = requests2.post(policy["upload_host"], data=body,
-                          headers={"Content-Type": "multipart/form-data; boundary=" + boundary}, timeout=60)
+                          headers={"Content-Type": "multipart/form-data; boundary=" + boundary}, timeout=90)
     if resp.status_code == 200:
         oss_url = "oss://" + key
         print("  OSS: " + oss_url)
@@ -919,7 +919,7 @@ def ask_qwen_omni(audio_oss, image_oss):
         {"role": "system", "content": [{"text": ctx}]},
         {"role": "user", "content": content_list}
     ]}}
-    resp = requests2.post(url, headers=headers, json_data=body, timeout=60)
+    resp = requests2.post(url, headers=headers, json_data=body, timeout=90)
     print("  Omni status: " + str(resp.status_code))
     if resp.status_code != 200:
         try:
@@ -948,7 +948,7 @@ def text_to_speech_dashscope(text):
     url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
     headers = {"Authorization": "Bearer " + API_KEY, "Content-Type": "application/json"}
     body = {"model": "qwen3-tts-flash", "input": {"text": text, "voice": "Cherry", "language_type": "Chinese"}}
-    resp = requests2.post(url, headers=headers, json_data=body, timeout=60)
+    resp = requests2.post(url, headers=headers, json_data=body, timeout=90)
     if resp.status_code != 200:
         print("  TTS API err: " + str(resp.status_code))
         return False
@@ -960,7 +960,7 @@ def text_to_speech_dashscope(text):
     # 下载带重试
     for retry in range(3):
         gc.collect()
-        audio_resp = requests2.get(audio_url, timeout=60)
+        audio_resp = requests2.get(audio_url, timeout=90)
         if audio_resp.status_code == 200:
             data = audio_resp.content
             if len(data) > 1000:
@@ -1074,7 +1074,7 @@ def audio_to_text(audio_oss):
         {"role": "system", "content": [{"text": "你是一个语音转文字工具，把用户的语音转成文字输出。"}]},
         {"role": "user", "content": [{"audio": audio_oss}]}
     ]}}
-    resp = requests2.post(url, headers=headers, json_data=body, timeout=60)
+    resp = requests2.post(url, headers=headers, json_data=body, timeout=90)
     if resp.status_code == 200:
         try:
             raw = resp.text if isinstance(resp.text, str) else resp.text.decode('utf-8')
@@ -1095,7 +1095,7 @@ def ask_qwen_omni_text_img(image_oss, question_text):
     if image_oss:
         print("  Omni (img+text)...")
         body = {"model": MODEL_OMNI, "input": {"messages": [{
-            "role": "system", "content": [{"text": "用一两句话简短回答，不超过50字。"}]
+            "role": "system", "content": [{"text": "用一两句话简短回答，不超过20字。"}]
         }, {
             "role": "user", "content": [
                 {"image": image_oss},
@@ -1105,7 +1105,7 @@ def ask_qwen_omni_text_img(image_oss, question_text):
     else:
         print("  (no image, using text fallback)")
         return ask_qwen_text_fallback(question_text)
-    resp = requests2.post(url, headers=headers, json_data=body, timeout=60)
+    resp = requests2.post(url, headers=headers, json_data=body, timeout=90)
     print("  status: " + str(resp.status_code))
     if resp.status_code != 200:
         try:
@@ -1135,7 +1135,7 @@ def ask_qwen_text_fallback(question_text):
         {"role": "system", "content": "用一两句话简短回答。"},
         {"role": "user", "content": question_text}
     ]}
-    resp = requests2.post(url, headers=headers, json_data=body, timeout=60)
+    resp = requests2.post(url, headers=headers, json_data=body, timeout=90)
     if resp.status_code == 200:
         try:
             raw = resp.text if isinstance(resp.text, str) else resp.text.decode('utf-8')
