@@ -392,8 +392,10 @@ def analyze_speech(text):
     return 0
 
 recog_item = None
-latest_frame = None  # PipeLine最新帧，供拍照使用
-pause_recog = False  # 播报时暂停识别
+latest_frame = None
+audio_busy = False     # 播报中禁止重复触发
+last_name = ""
+last_tm = 0
 # 自定义自学习类
 # Custom self-learning class
 class SelfLearningApp(AIBase):
@@ -552,9 +554,7 @@ class SelfLearningApp(AIBase):
     # 绘制结果，绘制特征采集框和特征分类框
     # Draw results displaying feature collection and classification boxes
     def draw_result(self, pl, feature):
-        global recog_item, pause_recog
-        if pause_recog:
-            return
+        global recog_item
         """
         绘制检测结果到屏幕
         Draw the detection results on the screen.
@@ -788,18 +788,10 @@ def exce_demo(pl, recong_only=False):
         # 无限循环处理每一帧数据
         # Infinite loop to process each frame
         while True:
-            global latest_frame, pause_recog
+            global latest_frame
             img = pl.get_frame()
             latest_frame = img
             time.sleep_ms(1)
-
-            if pause_recog:
-                # 播报中，只显示画面不更新识别
-                pl.show_image()
-                time.sleep_ms(100)
-                gc.collect()
-                continue
-
             res = sl.run(img)
             time.sleep_ms(1)
             sl.draw_result(pl, res)
@@ -1042,9 +1034,8 @@ def async_record():
 
 
 def voice_serv():
-    global recorder, voice_text_ret, record_flag, recog_item, pause_recog
+    global audio_busy, last_name, last_tm
 
-    # WiFi 后台尝试连接(供云端兜底使用)
     _thread.start_new_thread(connect_wifi, ())
 
     print("Voice service ready.")
@@ -1052,29 +1043,40 @@ def voice_serv():
     while True:
         rgb.show_rgb((0, 255, 0))
 
-        if recog_item and recog_item in MEDICINE_INFO and not pause_recog:
-            name = recog_item
-            print("  Auto: " + name)
-            # 暂停识别
-            pause_recog = True
-            recog_item = None
-            rgb.show_rgb((0, 0, 255))
-            # 屏幕显示
-            try:
-                img2 = image.Image(640, 480, image.RGB565)
-                img2.clear()
-                tx = (screen_width - len(name) * 16) // 2
-                img2.draw_string(tx, 220, name, color=(255, 255, 255, 255))
-                Display.show_image(img2, 0, 0, Display.LAYER_OSD3)
-            except:
-                pass
-            # 播放音频
-            local_respond(name)
-            # 恢复识别
-            pause_recog = False
-            recog_item = None
+        if recog_item and recog_item in MEDICINE_INFO and not audio_busy:
+            now = time.ticks_ms()
+            same = (recog_item == last_name and time.ticks_diff(now, last_tm) < 10000)
+            if not same:
+                name = recog_item
+                print("  Play: " + name)
+                audio_busy = True
+                last_name = name
+                last_tm = time.ticks_ms()
+                _thread.start_new_thread(do_play, (name,))
 
-        time.sleep_ms(200)
+        time.sleep_ms(50)
+
+
+def do_play(name):
+    global audio_busy
+    rgb.show_rgb((0, 0, 255))
+    # 屏幕显示药名
+    try:
+        img2 = image.Image(640, 480, image.RGB565)
+        img2.clear()
+        tx = (screen_width - len(name) * 16) // 2
+        img2.draw_string(tx, 220, name, color=(255, 255, 255, 255))
+        Display.show_image(img2, 0, 0, Display.LAYER_OSD3)
+    except:
+        pass
+    local_respond(name)
+    # 恢复
+    try:
+        img2.clear()
+        Display.show_image(img2, 0, 0, Display.LAYER_OSD3)
+    except:
+        pass
+    audio_busy = False
 
 
 
