@@ -1096,7 +1096,7 @@ def ask_qwen_omni_text_img(image_oss, question_text):
     if image_oss:
         print("  Omni (img+text)...")
         body = {"model": MODEL_OMNI, "input": {"messages": [{
-            "role": "system", "content": [{"text": "用一两句话简短回答，不超过15字。"}]
+            "role": "system", "content": [{"text": "直接回答，15字内，不描述图片格式。"}]
         }, {
             "role": "user", "content": [
                 {"image": image_oss},
