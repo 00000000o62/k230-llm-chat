@@ -395,7 +395,6 @@ def analyze_speech(text):
 recog_item = None
 latest_frame = None
 audio_busy = False
-take_snap = False  # 拍照信号
 pl = None     # 播报中禁止重复触发
 last_name = ""
 last_tm = 0
@@ -796,46 +795,10 @@ def exce_demo(pl, recong_only=False):
         # 无限循环处理每一帧数据
         # Infinite loop to process each frame
         while True:
-            global latest_frame, take_snap
+            global latest_frame
             img = pl.get_frame()
             latest_frame = img
             time.sleep_ms(1)
-
-            if take_snap:
-                take_snap = False
-                path = "/sdcard/snapshot.jpg"
-                ok = False
-                # 1) pl.get_frame() copy_to
-                try:
-                    simg = image.Image(640, 480, image.RGB565)
-                    simg.copy_from(img)
-                    simg.save(path)
-                    if os.stat(path)[6] > 2000:
-                        print("  snap raw: " + str(os.stat(path)[6]))
-                        ok = True
-                except Exception as e:
-                    print("  s1: " + str(e))
-                # 2) pl.get_frame() draw_image
-                if not ok:
-                    try:
-                        simg2 = image.Image(640, 480, image.RGB565)
-                        simg2.draw_image(img, 0, 0)
-                        simg2.save(path)
-                        if os.stat(path)[6] > 2000:
-                            print("  snap draw: " + str(os.stat(path)[6]))
-                            ok = True
-                    except Exception as e2:
-                        print("  s2: " + str(e2))
-                # 3) OSD兜底
-                if not ok:
-                    try:
-                        simg3 = image.Image(640, 480, image.RGB565)
-                        simg3.draw_image(pl.osd_img, 0, 0)
-                        simg3.save(path)
-                        print("  snap osd: " + str(os.stat(path)[6]))
-                    except Exception as e3:
-                        print("  s3: " + str(e3))
-
             res = sl.run(img)
             time.sleep_ms(1)
             sl.draw_result(pl, res)
@@ -1168,6 +1131,26 @@ def ask_qwen_text_fallback(question_text):
     return None
 
 
+def ask_qwen_text(question, context):
+    """Qwen-Turbo纯文字问答"""
+    print("  Qwen-Turbo...")
+    gc.collect()
+    url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+    headers = {"Authorization": "Bearer " + API_KEY, "Content-Type": "application/json"}
+    body = {"model": "qwen-turbo", "messages": [
+        {"role": "system", "content": context},
+        {"role": "user", "content": question}
+    ]}
+    resp = requests2.post(url, headers=headers, json_data=body, timeout=90)
+    if resp.status_code == 200:
+        try:
+            raw = resp.text if isinstance(resp.text, str) else resp.text.decode('utf-8')
+            return ujson.loads(raw)["choices"][0]["message"]["content"]
+        except:
+            pass
+    return None
+
+
 def async_get_voice_to_text():
     """录音→ASR + 照片(主线程已拍)→Qwen-Omni"""
     global voice_text_ret
@@ -1183,15 +1166,12 @@ def async_get_voice_to_text():
         if not text:
             voice_text_ret = ""
             return
-        print("  [3] upload snapshot...")
-        img_oss = None
-        try:
-            if os.stat("/sdcard/snapshot.jpg")[6] > 1000:
-                img_oss = upload_to_oss("/sdcard/snapshot.jpg", MODEL_OMNI)
-        except:
-            pass
-        print("  [4] Qwen-Omni(img=" + str(img_oss is not None) + ")...")
-        reply = ask_qwen_omni_text_img(img_oss, text)
+        # 用药上下文
+        ctx = "你是用药语音助手，简短回答。"
+        if recog_item and recog_item in MEDICINE_INFO:
+            ctx += "摄像头看到：" + recog_item + "。" + MEDICINE_INFO[recog_item]
+        print("  [3] Qwen-Turbo...")
+        reply = ask_qwen_text(text, ctx)
         voice_text_ret = reply if reply else ""
     except Exception as e:
         print("  err: " + str(e))
@@ -1253,10 +1233,6 @@ def voice_serv():
             _thread.start_new_thread(async_record, ())
             while record_flag == False:
                 time.sleep_ms(5)
-            # 触发主线程拍照
-            global take_snap
-            take_snap = True
-            time.sleep_ms(500)  # 等主线程拍照完成
             rgb.show_rgb((0, 0, 255))
             async_get_voice_to_text()
             while voice_text_ret is None:
