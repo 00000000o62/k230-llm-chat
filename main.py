@@ -1226,6 +1226,12 @@ def voice_serv():
             _thread.start_new_thread(async_record, ())
             while record_flag == False:
                 time.sleep_ms(5)
+            # 拍照测试
+            snap = capture_snapshot()
+            if snap:
+                print("  snap success: " + snap)
+            else:
+                print("  snap FAILED")
             rgb.show_rgb((0, 0, 255))
             async_get_voice_to_text()
             while voice_text_ret is None:
