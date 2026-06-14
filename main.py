@@ -1327,32 +1327,14 @@ if __name__ == "__main__":
         rgb.show_rgb((0, 0, 255)); time.sleep_ms(100)
         rgb.show_rgb((0, 0, 0)); time.sleep_ms(100)
 
-    # 按键切换模式: 启动时按住按键2秒→切换并重启
+    # 按键切换: 按住上电→云端模式, 不按→本地模式
     key = YbKey()
     if key.is_pressed():
-        print("  button held, switching mode...")
-        rgb.show_rgb((255, 128, 0))
-        t0 = time.ticks_ms()
-        while key.is_pressed():
-            if time.ticks_diff(time.ticks_ms(), t0) > 2000:
-                MODE = "cloud" if MODE == "local" else "local"
-                print("  switched to: " + MODE)
-                # 写入SD卡持久化
-                try:
-                    with open("/sdcard/mode.txt", "w") as f:
-                        f.write(MODE)
-                except: pass
-                rgb.show_rgb((0, 255, 0))
-                time.sleep_ms(500)
-                import machine
-                machine.reset()
-            time.sleep_ms(50)
-    # 从SD卡读取上次模式
-    try:
-        with open("/sdcard/mode.txt", "r") as f:
-            MODE = f.read().strip()
-    except: pass
-    print("  mode: " + MODE)
+        MODE = "cloud"
+        print("  -> cloud mode")
+    else:
+        MODE = "local"
+        print("  -> local mode")
 
     if MODE == "cloud":
         cloud_mode()
