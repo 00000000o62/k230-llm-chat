@@ -803,15 +803,38 @@ def exce_demo(pl, recong_only=False):
 
             if take_snap:
                 take_snap = False
+                path = "/sdcard/snapshot.jpg"
+                ok = False
+                # 1) pl.get_frame() copy_to
                 try:
-                    # 复用PipeLine已初始化的Sensor(索引0)
-                    from media.sensor import Sensor
-                    s = Sensor(0)
-                    snap = s.snapshot()
-                    snap.save("/sdcard/snapshot.jpg")
-                    print("  snap OK: " + str(os.stat("/sdcard/snapshot.jpg")[6]))
+                    simg = image.Image(640, 480, image.RGB565)
+                    simg.copy_from(img)
+                    simg.save(path)
+                    if os.stat(path)[6] > 2000:
+                        print("  snap raw: " + str(os.stat(path)[6]))
+                        ok = True
                 except Exception as e:
-                    print("  snap err: " + str(e))
+                    print("  s1: " + str(e))
+                # 2) pl.get_frame() draw_image
+                if not ok:
+                    try:
+                        simg2 = image.Image(640, 480, image.RGB565)
+                        simg2.draw_image(img, 0, 0)
+                        simg2.save(path)
+                        if os.stat(path)[6] > 2000:
+                            print("  snap draw: " + str(os.stat(path)[6]))
+                            ok = True
+                    except Exception as e2:
+                        print("  s2: " + str(e2))
+                # 3) OSD兜底
+                if not ok:
+                    try:
+                        simg3 = image.Image(640, 480, image.RGB565)
+                        simg3.draw_image(pl.osd_img, 0, 0)
+                        simg3.save(path)
+                        print("  snap osd: " + str(os.stat(path)[6]))
+                    except Exception as e3:
+                        print("  s3: " + str(e3))
 
             res = sl.run(img)
             time.sleep_ms(1)
