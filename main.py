@@ -985,46 +985,39 @@ def play_audio_file(filename):
 
 
 def capture_snapshot():
-    """多种方式尝试保存摄像头画面"""
-    global pl, latest_frame
+    """尝试多种方式拍照, 返回文件路径"""
     path = "/sdcard/snapshot.jpg"
-    # 方法1: get_frame直接保存
+    # 1) sensor模块级snapshot
     try:
-        frame = pl.get_frame()
-        if hasattr(frame, 'save'):
-            frame.save(path)
-            if os.stat(path)[6] > 1000:
-                print("  snap OK: " + str(os.stat(path)[6]))
-                return path
-    except Exception as e:
-        print("  m1: " + str(e))
-    # 方法2: 从latest_frame转换
-    try:
-        if latest_frame is not None:
-            w, h = 640, 480
-            simg = image.Image(w, h, image.RGB565)
-            if hasattr(latest_frame, 'copy_to'):
-                latest_frame.copy_to(simg)
-            else:
-                simg.draw_image(latest_frame, 0, 0)
-            simg.save(path)
-            if os.stat(path)[6] > 1000:
-                print("  snap OK: " + str(os.stat(path)[6]))
-                return path
-    except Exception as e:
-        print("  m2: " + str(e))
-    # 方法3: OSD图像兜底
-    try:
-        w = pl.osd_img.width()
-        h = pl.osd_img.height()
-        img2 = image.Image(w, h, image.RGB565)
-        img2.draw_image(pl.osd_img, 0, 0)
-        img2.save(path)
-        if os.stat(path)[6] > 1000:
-            print("  snap OK(osd): " + str(os.stat(path)[6]))
+        import media.sensor as ms
+        snap = ms.snapshot()
+        snap.save(path)
+        if os.stat(path)[6] > 2000:
+            print("  snap sensor: " + str(os.stat(path)[6]))
             return path
     except Exception as e:
-        print("  m3: " + str(e))
+        print("  s0: " + str(e))
+    # 2) image模块截屏
+    try:
+        snap = image.snapshot()
+        if snap:
+            snap.save(path)
+            if os.stat(path)[6] > 2000:
+                print("  snap img: " + str(os.stat(path)[6]))
+                return path
+    except Exception as e:
+        print("  s1: " + str(e))
+    # 3) latest_frame copy_from
+    try:
+        if latest_frame is not None:
+            simg = image.Image(640, 480, image.RGB565)
+            simg.copy_from(latest_frame)
+            simg.save(path)
+            if os.stat(path)[6] > 2000:
+                print("  snap copy: " + str(os.stat(path)[6]))
+                return path
+    except Exception as e:
+        print("  s2: " + str(e))
     return None
 
 
