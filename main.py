@@ -55,6 +55,7 @@ API_KEY = "sk-7f1f0e35b05d44239b6eefa43cff1996"
 # ============================================================
 REGISTER_MODE = False  # True=注册药盒, 注册完成后改为False
 GEN_WAV = False         # True=联网生成一次播报WAV文件, 完成后改为False
+MODE = "local"          # "local"=本地识别+播报, "cloud"=拍照上传+云端看图播报
 
 # ============================================================
 # 药品信息字典 — 本地识别到药盒后直接查字典播报(快速路径)
@@ -1226,12 +1227,6 @@ def voice_serv():
             _thread.start_new_thread(async_record, ())
             while record_flag == False:
                 time.sleep_ms(5)
-            # 拍照测试
-            snap = capture_snapshot()
-            if snap:
-                print("  snap success: " + snap)
-            else:
-                print("  snap FAILED")
             rgb.show_rgb((0, 0, 255))
             async_get_voice_to_text()
             while voice_text_ret is None:
@@ -1251,14 +1246,90 @@ def voice_serv():
 
 
 
+# ============================================================
+# 云端看图模式 (Sensor直接拍照 + Qwen-VL)
+# ============================================================
+def ask_qwen_vl(image_oss):
+    """Qwen-VL看图分析"""
+    print("  Qwen-VL...")
+    url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+    headers = {"Authorization": "Bearer " + API_KEY, "Content-Type": "application/json",
+               "X-DashScope-OssResourceResolve": "enable"}
+    body = {"model": "qwen-vl-max", "input": {"messages": [{
+        "role": "user",
+        "content": [
+            {"image": image_oss},
+            {"text": "描述图片中的内容，用中文简短回答不超过50字。"}
+        ]
+    }]}}
+    resp = requests2.post(url, headers=headers, json_data=body, timeout=90)
+    if resp.status_code == 200:
+        try:
+            raw = resp.text if isinstance(resp.text, str) else resp.text.decode('utf-8')
+            return ujson.loads(raw)["output"]["choices"][0]["message"]["content"][0]["text"]
+        except: pass
+    return None
+
+
+def cloud_mode():
+    """云端看图模式: Sensor拍照→上传→Qwen-VL→TTS"""
+    print("=== Cloud Mode ===")
+    key = YbKey()
+    # WiFi
+    while not connect_wifi():
+        rgb.show_rgb((255, 128, 0)); time.sleep_ms(500)
+        rgb.show_rgb((0, 0, 0)); time.sleep(2)
+    # 初始化Sensor+Display
+    sensor = Sensor()
+    sensor.reset()
+    sensor.set_framesize(width=640, height=480, chn=CAM_CHN_ID_1)
+    sensor.set_pixformat(Sensor.RGB565, chn=CAM_CHN_ID_1)
+    Display.init(Display.ST7701, width=640, height=480, to_ide=True)
+    MediaManager.init()
+    sensor.run()
+    last = False
+    i = 1
+    while True:
+        rgb.show_rgb((0, 255, 0))
+        img = sensor.snapshot(chn=CAM_CHN_ID_1)
+        img2 = image.Image(640, 480, image.RGB565)
+        img2.clear()
+        img2.copy_from(img)
+        img2.draw_string_advanced(10, 10, 18, "Cloud Mode | Press to capture", color=(255, 255, 0, 0))
+        Display.show_image(img2, 0, 0, Display.LAYER_OSD2)
+        if key.is_pressed() and not last:
+            last = True
+            rgb.show_rgb((0, 0, 255))
+            path = "/sdcard/cloud_" + str(i) + ".jpg"
+            img.save(path)
+            print("  photo: " + str(os.stat(path)[6]))
+            # 上传 OSS
+            oss = upload_to_oss(path, "qwen-vl-max")
+            try: os.remove(path)
+            except: pass
+            if oss:
+                reply = ask_qwen_vl(oss)
+                if reply:
+                    print("  VL: " + reply)
+                    if text_to_speech_dashscope(reply):
+                        play_audio_file("/sdcard/tts_reply.wav")
+                        try: os.remove("/sdcard/tts_reply.wav")
+                        except: pass
+            i += 1
+        elif not key.is_pressed():
+            last = False
+        time.sleep_ms(50)
+
+
 # 主程序入口
 if __name__ == "__main__":
-    # 启动指示: 蓝闪2次
     for _ in range(2):
-        rgb.show_rgb((0, 0, 255))
-        time.sleep_ms(100)
-        rgb.show_rgb((0, 0, 0))
-        time.sleep_ms(100)
+        rgb.show_rgb((0, 0, 255)); time.sleep_ms(100)
+        rgb.show_rgb((0, 0, 0)); time.sleep_ms(100)
+
+    if MODE == "cloud":
+        cloud_mode()
+        raise SystemExit
 
     rgb888p_size = [1280, 960]
     display_size = [640, 480]
