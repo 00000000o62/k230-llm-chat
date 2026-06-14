@@ -55,7 +55,7 @@ API_KEY = "sk-7f1f0e35b05d44239b6eefa43cff1996"
 # ============================================================
 REGISTER_MODE = False  # True=注册药盒, 注册完成后改为False
 GEN_WAV = False         # True=联网生成一次播报WAV文件, 完成后改为False
-MODE = "local"          # "local"=本地识别+播报, "cloud"=拍照上传+云端看图播报
+MODE = "local"          # 默认模式, 按键可切换
 
 # ============================================================
 # 药品信息字典 — 本地识别到药盒后直接查字典播报(快速路径)
@@ -1326,6 +1326,33 @@ if __name__ == "__main__":
     for _ in range(2):
         rgb.show_rgb((0, 0, 255)); time.sleep_ms(100)
         rgb.show_rgb((0, 0, 0)); time.sleep_ms(100)
+
+    # 按键切换模式: 启动时按住按键2秒→切换并重启
+    key = YbKey()
+    if key.is_pressed():
+        print("  button held, switching mode...")
+        rgb.show_rgb((255, 128, 0))
+        t0 = time.ticks_ms()
+        while key.is_pressed():
+            if time.ticks_diff(time.ticks_ms(), t0) > 2000:
+                MODE = "cloud" if MODE == "local" else "local"
+                print("  switched to: " + MODE)
+                # 写入SD卡持久化
+                try:
+                    with open("/sdcard/mode.txt", "w") as f:
+                        f.write(MODE)
+                except: pass
+                rgb.show_rgb((0, 255, 0))
+                time.sleep_ms(500)
+                import machine
+                machine.reset()
+            time.sleep_ms(50)
+    # 从SD卡读取上次模式
+    try:
+        with open("/sdcard/mode.txt", "r") as f:
+            MODE = f.read().strip()
+    except: pass
+    print("  mode: " + MODE)
 
     if MODE == "cloud":
         cloud_mode()
