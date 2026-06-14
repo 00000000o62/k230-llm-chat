@@ -942,27 +942,21 @@ def ask_qwen_omni(audio_oss, image_oss):
 
 
 def text_to_speech_dashscope(text):
-    """文字转语音(多模型尝试)"""
+    """Qwen3-TTS文字转语音"""
     text = text[:60]
     print("  TTS: " + text[:40] + "...")
     gc.collect()
     url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
     headers = {"Authorization": "Bearer " + API_KEY, "Content-Type": "application/json"}
-    models = ["qwen3-tts-flash", "cosyvoice-v1", "qwen-tts"]
-    for m in models:
-        print("  try " + m + "...")
-        body = {"model": m, "input": {"text": text, "voice": "Cherry", "language_type": "Chinese"}}
-        resp = requests2.post(url, headers=headers, json_data=body, timeout=90)
-        if resp.status_code == 200:
-            try:
-                raw = resp.text if isinstance(resp.text, str) else resp.text.decode('utf-8')
-                audio_url = ujson.loads(raw)["output"]["audio"]["url"]
-                break
-            except:
-                continue
-        print("  " + m + " failed: " + str(resp.status_code))
-    else:
-        print("  all TTS models failed")
+    body = {"model": "qwen3-tts-flash", "input": {"text": text, "voice": "Cherry", "language_type": "Chinese"}}
+    resp = requests2.post(url, headers=headers, json_data=body, timeout=90)
+    if resp.status_code != 200:
+        print("  TTS API err: " + str(resp.status_code))
+        return False
+    try:
+        raw = resp.text if isinstance(resp.text, str) else resp.text.decode('utf-8')
+        audio_url = ujson.loads(raw)["output"]["audio"]["url"]
+    except:
         return False
     # 下载带重试
     for retry in range(3):
